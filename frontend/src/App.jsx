@@ -1,0 +1,327 @@
+import React, { useState, useEffect } from 'react';
+import Header from './components/Header';
+import FilterBar from './components/FilterBar';
+import TierListView from './components/TierListView';
+import BudiCard from './components/BudiCard';
+import BudiTable from './components/BudiTable';
+import VideoModal from './components/VideoModal';
+import EditModal from './components/EditModal';
+import ReportModal from './components/ReportModal';
+import AdminPanel from './components/AdminPanel';
+import BudiGame from './components/BudiGame';
+import TopographicBackground from './components/TopographicBackground';
+import { Sparkles, RefreshCw, Trophy, Shield } from 'lucide-react';
+
+export default function App() {
+  const [isAdminRoute, setIsAdminRoute] = useState(() => {
+    return window.location.pathname.startsWith('/config/admin');
+  });
+
+  const [status, setStatus] = useState({
+    status: 'idle',
+    total_channel_videos: 0,
+    processed_count: 0,
+    matches_found: 0,
+    current_video_title: '',
+    scanned_videos_count: 0,
+    logs: []
+  });
+
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [preset, setPreset] = useState('all');
+  const [minRating, setMinRating] = useState(0);
+  const [sortBy, setSortBy] = useState('rating_desc');
+  const [viewMode, setViewMode] = useState('tierlist');
+
+  // Modals
+  const [playingItem, setPlayingItem] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
+  const [reportingItem, setReportingItem] = useState(null);
+
+  // Admin session reactive state
+  const [hasAdminSession, setHasAdminSession] = useState(() => {
+    return Boolean(localStorage.getItem('budicheck_admin_token'));
+  });
+
+  const checkAdminSession = async () => {
+    const token = localStorage.getItem('budicheck_admin_token');
+    if (!token) {
+      setHasAdminSession(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/check', {
+        headers: { 'x-admin-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const valid = Boolean(data.authenticated);
+        setHasAdminSession(valid);
+        if (!valid) {
+          localStorage.removeItem('budicheck_admin_token');
+        }
+      } else {
+        setHasAdminSession(false);
+      }
+    } catch {
+      setHasAdminSession(Boolean(token));
+    }
+  };
+
+  // Sync route with browser history and listen for auth changes
+  useEffect(() => {
+    const handlePopState = () => {
+      setIsAdminRoute(window.location.pathname.startsWith('/config/admin'));
+    };
+    const handleAuthChange = () => {
+      checkAdminSession();
+    };
+
+    checkAdminSession();
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('budicheck_auth_changed', handleAuthChange);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('budicheck_auth_changed', handleAuthChange);
+    };
+  }, [isAdminRoute]);
+
+  const navigateToAdmin = (showAdmin) => {
+    if (showAdmin) {
+      window.history.pushState({}, '', '/config/admin');
+      setIsAdminRoute(true);
+    } else {
+      window.history.pushState({}, '', '/');
+      setIsAdminRoute(false);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const fetchStatus = async () => {
+    try {
+      const token = localStorage.getItem('budicheck_admin_token') || '';
+      const headers = token ? { 'x-admin-token': token } : {};
+      const res = await fetch('/api/status', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch status:', e);
+    }
+  };
+
+  const fetchChecks = async () => {
+    try {
+      const isTierList = viewMode === 'tierlist' || viewMode === 'community_tierlist';
+      let url = `/api/checks?sort_by=${sortBy}`;
+      if (!isTierList) {
+        if (minRating > 0) {
+          url += `&min_rating=${minRating}`;
+          if (preset === 'masterpiece') url += `&max_rating=10.0`;
+          else if (preset === 'good') url += `&max_rating=8.9`;
+          else if (preset === 'average') url += `&max_rating=6.9`;
+          else if (preset === 'bad') url += `&max_rating=3.9`;
+        }
+        if (search) {
+          url += `&search=${encodeURIComponent(search)}`;
+        }
+      }
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setItems(data.items || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch checks:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    fetchChecks();
+    const interval = setInterval(() => {
+      fetchStatus();
+      if (status.status === 'running') {
+        fetchChecks();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [status.status, minRating, preset, search, sortBy]);
+
+  const handleDelete = async (checkId) => {
+    const token = localStorage.getItem('budicheck_admin_token') || '';
+    if (!token) return;
+    if (window.confirm('Biztosan törölni szeretnéd ezt a WC értékelést?')) {
+      await fetch(`/api/checks/${checkId}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': token }
+      });
+      fetchChecks();
+      fetchStatus();
+    }
+  };
+
+  const handleSaveEdit = async (checkId, rating, quote, gameTitle, timestamp) => {
+    const token = localStorage.getItem('budicheck_admin_token') || '';
+    if (!token) return;
+    await fetch(`/api/checks/${checkId}`, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-token': token
+      },
+      body: JSON.stringify({ rating, quote, game_title: gameTitle, timestamp })
+    });
+    setEditingItem(null);
+    fetchChecks();
+    fetchStatus();
+  };
+
+  return (
+    <div className="app" style={{ position: 'relative', minHeight: '100vh' }}>
+      <TopographicBackground />
+      <Header 
+        status={status} 
+        onRefresh={() => { fetchStatus(); fetchChecks(); }}
+        onGoToAdmin={navigateToAdmin}
+        isAdminView={isAdminRoute}
+        hasAdminSession={hasAdminSession}
+      />
+
+      {isAdminRoute ? (
+        <AdminPanel 
+          status={status}
+          onRefreshStatus={fetchStatus}
+          onRefreshChecks={fetchChecks}
+          onBackToPublic={() => navigateToAdmin(false)}
+          onEditCheck={setEditingItem}
+          onPlayItem={setPlayingItem}
+        />
+      ) : (
+        <main className="container" style={{ marginTop: '1.5rem', marginBottom: '4rem' }}>
+          {/* COMMUNITY QUIZ & MINIGAME BANNER */}
+          <BudiGame onPlayItem={setPlayingItem} />
+
+          {/* FILTER AND CONTROLS BAR */}
+          <FilterBar
+            search={search}
+            setSearch={setSearch}
+            preset={preset}
+            setPreset={setPreset}
+            minRating={minRating}
+            setMinRating={setMinRating}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            totalItems={items.length}
+          />
+
+          {/* LISTINGS / TIER LIST / GRID / TABLE */}
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '4rem' }}>
+              <RefreshCw className="spin" size={32} style={{ color: 'var(--accent-cyan)' }} />
+              <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>BudiCheck adatok betöltése...</p>
+            </div>
+          ) : items.length > 0 ? (
+            (viewMode === 'tierlist' || viewMode === 'community_tierlist') ? (
+              <TierListView
+                checks={items}
+                onSelectCheck={setPlayingItem}
+                isCommunityMode={viewMode === 'community_tierlist'}
+                onReport={setReportingItem}
+              />
+            ) : viewMode === 'grid' ? (
+              <div className="budi-grid">
+                {items.map((item) => (
+                  <BudiCard
+                    key={item.id}
+                    item={item}
+                    onPlay={setPlayingItem}
+                    onEdit={hasAdminSession ? setEditingItem : null}
+                    onDelete={hasAdminSession ? handleDelete : null}
+                    onReport={setReportingItem}
+                  />
+                ))}
+              </div>
+            ) : (
+              <BudiTable
+                items={items}
+                onPlay={setPlayingItem}
+                onEdit={hasAdminSession ? setEditingItem : null}
+                onDelete={hasAdminSession ? handleDelete : null}
+                onReport={setReportingItem}
+              />
+            )
+          ) : viewMode === 'table' ? (
+            <BudiTable
+              items={[]}
+              onPlay={setPlayingItem}
+              onEdit={hasAdminSession ? setEditingItem : null}
+              onDelete={hasAdminSession ? handleDelete : null}
+              onReport={setReportingItem}
+            />
+          ) : (
+            <div className="glass-panel empty-state">
+              <div className="empty-icon">🚽</div>
+              <h3 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '0.5rem' }}>
+                Még nem található a szűrőnek megfelelő "Budi Check"
+              </h3>
+              <p style={{ maxWidth: '500px', margin: '0 auto 1.5rem', fontSize: '0.95rem' }}>
+                Az adatbázis jelenleg üres vagy a beállított szűrők nem adnak találatot.
+              </p>
+              {hasAdminSession && (
+                <button className="btn btn-primary" onClick={() => navigateToAdmin(true)}>
+                  <Shield size={18} />
+                  <span>Irány az Adminisztrációs Felület</span>
+                </button>
+              )}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* VIDEO MODAL */}
+      {playingItem && (
+        <VideoModal
+          item={playingItem}
+          onClose={() => setPlayingItem(null)}
+          onEdit={hasAdminSession ? (item) => {
+            setPlayingItem(null);
+            setEditingItem(item);
+          } : null}
+          onDelete={hasAdminSession ? handleDelete : null}
+          onReport={setReportingItem}
+        />
+      )}
+
+      {/* EDIT MODAL (ADMIN ONLY) */}
+      {editingItem && (
+        <EditModal
+          item={editingItem}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+
+      {/* REPORT MODAL (ANY VISITOR) */}
+      {reportingItem && (
+        <ReportModal
+          item={reportingItem}
+          onClose={() => setReportingItem(null)}
+          onSuccess={() => {
+            fetchStatus();
+          }}
+        />
+      )}
+    </div>
+  );
+}

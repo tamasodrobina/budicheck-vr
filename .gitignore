@@ -1,0 +1,49 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Node dependencies
+frontend/node_modules/
+node_modules/
+
+# Local binaries & caches
+bin/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Temporary test audio, video & snapshots
+*.mp3
+*.wav
+*.mp4
+*.mkv
+*.avi
+*.webm
+cand_*.jpg
+*/cand_*.jpg
+test_audio.*
+test_chunk*
+test_snapshots/
+scratch/
+test_*.py
+data/test_*
+data/reference_bg.jpg
+data/check_t5.py
+record_*.js
+record_demo.js
+
+# Environment, cookies & secrets
+.env
+config.json
+*/config.json
+*cookie*.txt
+*.cookies
+cookies.txt
+
+# IDE & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
