@@ -16,14 +16,17 @@ from .database import db, SCREENSHOTS_DIR
 from .game_detector import detect_game_title_from_video
 
 def get_ffmpeg_path() -> str:
-    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "ffmpeg.exe"))
-    if os.path.exists(local_bin):
-        return local_bin
     try:
         import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
     except Exception:
         pass
+    bin_name = "ffmpeg.exe" if os.name == 'nt' else "ffmpeg"
+    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", bin_name))
+    if os.path.exists(local_bin):
+        return local_bin
     return shutil.which("ffmpeg") or "ffmpeg"
 
 def get_client() -> Optional[genai.Client]:
@@ -465,7 +468,8 @@ Válaszolj szigorúan JSON formátumban a megadott séma szerint!
                         break
 
     except Exception as e:
-        db.add_log(f"⚠️ Gemini hangfájl feldolgozási hiba: {str(e).split('\n')[0][:100]}", "warning")
+        err_msg = str(e).splitlines()[0][:100] if str(e) else "Ismeretlen hiba"
+        db.add_log(f"⚠️ Gemini hangfájl feldolgozási hiba: {err_msg}", "warning")
     finally:
         if uploaded_file and client:
             try:

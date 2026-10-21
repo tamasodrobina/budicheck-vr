@@ -29,14 +29,17 @@ from .gemini_analyzer import (
 )
 
 def get_ffmpeg_path() -> str:
-    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "ffmpeg.exe"))
-    if os.path.exists(local_bin):
-        return local_bin
     try:
         import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
     except Exception:
         pass
+    bin_name = "ffmpeg.exe" if os.name == 'nt' else "ffmpeg"
+    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", bin_name))
+    if os.path.exists(local_bin):
+        return local_bin
     return shutil.which("ffmpeg") or "ffmpeg"
 
 FFMPEG_EXE = get_ffmpeg_path()
