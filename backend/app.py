@@ -2,7 +2,7 @@ import os
 import time
 from datetime import datetime
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends
+from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -20,6 +20,7 @@ from .config import (
 )
 from .gemini_analyzer import check_models_quota, audit_budi_check_with_ai
 from .game_detector import detect_game_title_from_video
+from .security import get_client_ip, get_voter_hash, vote_limiter, report_limiter, login_limiter
 
 app = FastAPI(title="TheVR Jani BudiCheck API", version="1.0.0")
 
@@ -56,15 +57,19 @@ class VerifyCheckModel(BaseModel):
     is_verified: Optional[bool] = None
 
 class ReportCreateModel(BaseModel):
-    check_id: str
+    check_id: Optional[str] = "general"
     reason: str
     details: Optional[str] = ""
+    hp_token: Optional[str] = None
+    client_ts: Optional[float] = None
 
 class ReportUpdateModel(BaseModel):
     status: str
 
 class ResnapshotModel(BaseModel):
-    timestamp_sec: float
+    timestamp_sec: Optional[float] = None
+    offset_sec: Optional[float] = 0.0
+    force: Optional[bool] = True
 
 class ConfigUpdateModel(BaseModel):
     gemini_api_key: Optional[str] = None
@@ -78,14 +83,28 @@ class SingleVideoScanModel(BaseModel):
 class VoteModel(BaseModel):
     check_id: str
     rating: float
+    hp_token: Optional[str] = None
+    client_ts: Optional[float] = None
 
 # --- ADMIN AUTH ENDPOINTS ---
 
 @app.post("/api/admin/login")
-def admin_login(data: LoginModel):
+def admin_login(data: LoginModel, request: Request):
+    client_ip = get_client_ip(request)
+    allowed, retry_sec = login_limiter.is_allowed(client_ip, max_requests=5, window_seconds=900)
+    if not allowed:
+        m = int(retry_sec // 60) + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Túl sok sikertelen bejelentkezési kísérlet! Kérlek próbáld újra {m} perc múlva."
+        )
+
     if verify_admin_password(data.password):
+        login_limiter.reset(client_ip)
         token = create_admin_token()
         return {"success": True, "token": token}
+
+    login_limiter.record(client_ip)
     raise HTTPException(status_code=401, detail="Helytelen adminisztrátori jelszó!")
 
 @app.post("/api/admin/logout")
@@ -397,20 +416,60 @@ def clean_rejected_checks(admin: bool = Depends(require_admin)):
     return {"success": True, "deleted_count": deleted}
 
 @app.post("/api/checks/{check_id}/resnapshot")
-def resnapshot_check(check_id: str, data: ResnapshotModel, admin: bool = Depends(require_admin)):
+def resnapshot_check(check_id: str, data: Optional[ResnapshotModel] = Body(None), admin: bool = Depends(require_admin)):
     checks = db.get_checks()
     target = next((c for c in checks if c["id"] == check_id), None)
     if not target:
         raise HTTPException(status_code=404, detail="Budi check record not found")
 
-    new_url = capture_screenshot(target["video_id"], data.timestamp_sec)
+    cur_sec = float(target.get("timestamp_sec") or 0.0)
+    if data and data.timestamp_sec is not None:
+        target_sec = float(data.timestamp_sec)
+    else:
+        target_sec = cur_sec
+
+    if data and data.offset_sec:
+        target_sec = max(0.0, target_sec + float(data.offset_sec))
+
+    target_sec = round(target_sec, 1)
+    force = data.force if (data and data.force is not None) else True
+
+    db.add_log(f"📸 Újravágás kérése: {target.get('game_title') or target.get('video_title')} ({target_sec}s)...", "info")
+    new_url = capture_screenshot(target["video_id"], target_sec, force=force)
     if not new_url:
-        raise HTTPException(status_code=500, detail="Failed to capture screenshot")
+        raise HTTPException(status_code=500, detail="Nem sikerült új képernyőképet kivágni a videóból.")
+
+    new_fmt = format_timestamp(target_sec)
+    new_yt = f"https://www.youtube.com/watch?v={target['video_id']}&t={int(target_sec)}s"
 
     target["screenshot_url"] = new_url
-    target["timestamp_sec"] = data.timestamp_sec
+    target["timestamp_sec"] = target_sec
+    target["timestamp_formatted"] = new_fmt
+    target["yt_timestamp_url"] = new_yt
+
+    # Re-run AI vision audit on updated screenshot & timestamp
+    try:
+        audit_res = audit_budi_check_with_ai(target)
+        st = audit_res.get("audit_status", "warning")
+        has_fixture = audit_res.get("has_toilet_fixture", True)
+        is_ver = (st == "verified" and has_fixture)
+        target["is_verified"] = is_ver
+        target["audit_status"] = st
+        target["audit_notes"] = audit_res.get("audit_notes", "")
+    except Exception as e:
+        logger.warning(f"Audit warning during resnapshot: {e}")
+
     db.add_budi_check(target)
-    return {"message": "Screenshot updated", "screenshot_url": new_url}
+    db.add_log(f"📸 Újravágás sikeres: {target.get('game_title')} ({new_fmt})", "success")
+
+    return {
+        "success": True,
+        "message": f"Képkocka sikeresen újravágva ({new_fmt})!",
+        "screenshot_url": new_url,
+        "timestamp_sec": target_sec,
+        "timestamp_formatted": new_fmt,
+        "item": target
+    }
 
 @app.post("/api/checks/{check_id}/sync-timestamp")
 def sync_check_timestamp(check_id: str, admin: bool = Depends(require_admin)):
@@ -503,27 +562,69 @@ def sync_check_game_title(check_id: str, admin: bool = Depends(require_admin)):
 # --- USER REPORTING & ADMIN REPORT MANAGEMENT ---
 
 @app.post("/api/reports")
-def create_report(data: ReportCreateModel):
+def create_report(data: ReportCreateModel, request: Request):
+    # 1. Honeypot check (bot detection)
+    if data.hp_token and data.hp_token.strip():
+        raise HTTPException(status_code=400, detail="Érvénytelen kérés.")
+
+    # 2. Timing check (sub-second submission = bot)
+    if data.client_ts:
+        now_ts = time.time() * 1000
+        if (now_ts - data.client_ts) < 800:
+            raise HTTPException(status_code=429, detail="Túl gyors beküldés! Kérlek olvasd át az űrlapot.")
+
+    # 3. Rate limiting (max 3 reports per 5 minutes per IP)
+    client_ip = get_client_ip(request)
+    allowed, retry_sec = report_limiter.is_allowed(client_ip, max_requests=3, window_seconds=300)
+    if not allowed:
+        m = int(retry_sec // 60) + 1
+        raise HTTPException(
+            status_code=429,
+            detail=f"Túl sok hibabejelentés érkezett ebből a hálózatból. Kérlek várj {m} percet!"
+        )
+
+    # 4. Duplicate report prevention: if this IP already reported this check_id in 'open' status
+    voter_hash = get_voter_hash(client_ip)
+    chk_id = data.check_id if (data.check_id and data.check_id.strip()) else "general"
+    is_general = (chk_id == "general")
+
+    existing = [
+        r for r in db.get_reports()
+        if r.get("check_id") == chk_id
+        and r.get("voter_hash") == voter_hash
+        and r.get("status") == "open"
+    ]
+    if existing:
+        return {
+            "success": True,
+            "message": "Már rögzítettünk egy nyitott bejelentést tőled ezzel kapcsolatban! Az adminisztrátor hamarosan átvizsgálja.",
+            "report_id": existing[0]["id"],
+            "already_reported": True
+        }
+
     checks = db.get_checks()
-    target = next((c for c in checks if c["id"] == data.check_id), None)
+    target = next((c for c in checks if c["id"] == chk_id), None) if not is_general else None
     
     rep_id = f"rep_{int(time.time()*1000)}"
     entry = {
         "id": rep_id,
-        "check_id": data.check_id,
+        "check_id": chk_id,
+        "is_general": is_general,
         "reason": data.reason.strip(),
         "details": (data.details or "").strip(),
-        "game_title": target.get("game_title", "Ismeretlen játék") if target else "Törölt vagy ismeretlen budi",
-        "video_title": target.get("video_title", "") if target else "",
-        "timestamp_formatted": target.get("timestamp_formatted", "") if target else "",
-        "screenshot_url": target.get("screenshot_url", "") if target else "",
+        "game_title": "📱 Általános Weboldal Észrevétel" if is_general else (target.get("game_title", "Ismeretlen játék") if target else "Törölt vagy ismeretlen budi"),
+        "video_title": "Mobilos nézet / Weboldal hiba" if is_general else (target.get("video_title", "") if target else ""),
+        "timestamp_formatted": "" if is_general else (target.get("timestamp_formatted", "") if target else ""),
+        "screenshot_url": "" if is_general else (target.get("screenshot_url", "") if target else ""),
         "created_at": datetime.now().isoformat(),
-        "status": "open"
+        "status": "open",
+        "voter_hash": voter_hash
     }
     db.add_report(entry)
+    db.add_log(f"📩 Új {'általános ' if is_general else ''}hibabejelentés érkezett: {data.reason}", "warning")
     return {
         "success": True,
-        "message": "Köszönjük a bejelentést! Az adminisztrátor át fogja vizsgálni ezt a budit.",
+        "message": "Köszönjük a bejelentést! Az észrevételed eljutott az oldal karbantartójához.",
         "report_id": rep_id
     }
 
@@ -574,12 +675,36 @@ def get_game_random(exclude_id: Optional[str] = None):
     return safe_item
 
 @app.post("/api/game/vote")
-def post_game_vote(data: VoteModel):
+def post_game_vote(data: VoteModel, request: Request):
+    # 1. Honeypot check (bot detection)
+    if data.hp_token and data.hp_token.strip():
+        raise HTTPException(status_code=400, detail="Érvénytelen kérés.")
+
+    # 2. Timing check (sub-second submission = bot)
+    if data.client_ts:
+        now_ts = time.time() * 1000  # ms
+        if (now_ts - data.client_ts) < 800:
+            raise HTTPException(status_code=429, detail="Túl gyors szavazat! Kérlek várj egy pillanatot.")
+
+    # 3. Client IP & Rate limiting (max 15 votes per 60 seconds per IP)
+    client_ip = get_client_ip(request)
+    allowed, retry_sec = vote_limiter.is_allowed(client_ip, max_requests=15, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Túl sok szavazat rövid idő alatt! Kérlek várj {retry_sec} másodpercet."
+        )
+
+    # 4. Rating bounds check
     if data.rating < 0.0 or data.rating > 10.0:
         raise HTTPException(status_code=400, detail="A pontszámnak 0 és 10 között kell lennie!")
-    result = db.record_community_vote(data.check_id, data.rating)
+
+    # 5. Voter ID (IP hash) - 1 voter = 1 vote per check_id
+    voter_id = get_voter_hash(client_ip)
+    result = db.record_community_vote(data.check_id, data.rating, voter_id=voter_id)
     if not result:
         raise HTTPException(status_code=404, detail="A megadott budi elem nem található!")
+
     return result
 
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

@@ -1,7 +1,7 @@
 import React from 'react';
-import { RefreshCw, Shield, Trophy } from 'lucide-react';
+import { RefreshCw, Shield, Trophy, Bug } from 'lucide-react';
 
-export default function Header({ onRefresh, onGoToAdmin, isAdminView, hasAdminSession }) {
+export default function Header({ onRefresh, onGoToAdmin, isAdminView, hasAdminSession, onOpenGeneralReport }) {
   return (
     <header className="header">
       <div className="container header-content">
@@ -14,9 +14,9 @@ export default function Header({ onRefresh, onGoToAdmin, isAdminView, hasAdminSe
           <div className="brand-icon">🚽</div>
           <div>
             <h1 className="brand-title">
-              BudiCheck <span style={{ color: 'var(--accent-cyan)' }}>VR</span>
+              TheVR Jani <span style={{ color: 'var(--accent-cyan)' }}>BudiCheck</span>
             </h1>
-            <p className="brand-tagline">TheVR Jani BudiCheck Rangsor & Archívum</p>
+            <p className="brand-tagline">Budi Értékelő Rangsor & Archívum</p>
           </div>
         </div>
 
@@ -27,6 +27,26 @@ export default function Header({ onRefresh, onGoToAdmin, isAdminView, hasAdminSe
             title="Adatok Frissítése"
           >
             <RefreshCw size={17} />
+          </button>
+
+          <button
+            className="btn btn-secondary"
+            onClick={onOpenGeneralReport}
+            style={{
+              fontSize: '0.82rem',
+              padding: '0.45rem 0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: '#ff758f',
+              borderColor: 'rgba(255, 117, 143, 0.4)',
+              background: 'rgba(255, 117, 143, 0.08)',
+              fontWeight: 600
+            }}
+            title="Weboldal hiba, mobilos nézet vagy észrevétel bejelentése"
+          >
+            <Bug size={15} />
+            <span>Hibabejelentés</span>
           </button>
 
           {/* Admin toggle - only visible when authenticated */}

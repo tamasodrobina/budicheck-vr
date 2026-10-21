@@ -106,6 +106,7 @@ class Database:
                 c.pop("user_votes_count", None)
                 c.pop("user_votes_sum", None)
                 c.pop("user_votes_avg", None)
+                c.pop("user_votes", None)
         self.save()
         self.add_log("🗳️ Felhasználói szavazatok és közösségi átlagok sikeresen nullázva!", "success")
 
@@ -316,29 +317,46 @@ class Database:
         with self.lock:
             return list(self.budi_checks)
 
-    def record_community_vote(self, check_id: str, rating: float) -> Optional[Dict[str, Any]]:
+    def record_community_vote(self, check_id: str, rating: float, voter_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         with self.lock:
             target = next((c for c in self.budi_checks if c["id"] == check_id), None)
             if not target:
                 return None
             
-            votes_count = target.get("user_votes_count", 0) + 1
-            votes_sum = target.get("user_votes_sum", 0.0) + float(rating)
-            votes_avg = round(votes_sum / votes_count, 1)
+            rating_val = round(float(rating), 1)
+            v_map = target.setdefault("user_votes", {})
+            is_updated = False
 
-            target["user_votes_count"] = votes_count
-            target["user_votes_sum"] = votes_sum
+            if voter_id:
+                if voter_id in v_map:
+                    is_updated = True
+                    old_score = float(v_map[voter_id])
+                    v_map[voter_id] = rating_val
+                    current_sum = float(target.get("user_votes_sum") or 0.0) - old_score + rating_val
+                    target["user_votes_sum"] = max(0.0, current_sum)
+                else:
+                    v_map[voter_id] = rating_val
+                    target["user_votes_count"] = int(target.get("user_votes_count") or 0) + 1
+                    target["user_votes_sum"] = float(target.get("user_votes_sum") or 0.0) + rating_val
+            else:
+                target["user_votes_count"] = int(target.get("user_votes_count") or 0) + 1
+                target["user_votes_sum"] = float(target.get("user_votes_sum") or 0.0) + rating_val
+
+            votes_count = int(target.get("user_votes_count") or 0)
+            votes_sum = float(target.get("user_votes_sum") or 0.0)
+            votes_avg = round(votes_sum / votes_count, 1) if votes_count > 0 else rating_val
             target["user_votes_avg"] = votes_avg
         
         self.save()
         return {
             "check_id": check_id,
-            "user_rating": rating,
+            "user_rating": rating_val,
             "jani_rating": target.get("rating", 7.0),
             "community_avg": votes_avg,
             "votes_count": votes_count,
             "game_title": target.get("game_title", target.get("video_title")),
-            "quote": target.get("quote", "")
+            "quote": target.get("quote", ""),
+            "is_updated": is_updated
         }
 
     def get_random_check_for_game(self, exclude_id: Optional[str] = None) -> Optional[Dict[str, Any]]:

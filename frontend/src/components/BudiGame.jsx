@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Gamepad2, Sparkles, Trophy, Star, RefreshCw, Play, 
   ExternalLink, ChevronRight, CheckCircle, Flame, Heart, 
@@ -14,6 +14,10 @@ export default function BudiGame({ onPlayItem }) {
   const [votedResult, setVotedResult] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState('image'); // Default to toilet photo for instant guessing
+  const [voteError, setVoteError] = useState('');
+  const [prevVote, setPrevVote] = useState(null);
+  const [hpToken, setHpToken] = useState('');
+  const loadTimeRef = useRef(Date.now());
 
   const handleRatingChange = (e) => {
     let val = e.target.value.replace(',', '.');
@@ -44,13 +48,22 @@ export default function BudiGame({ onPlayItem }) {
     try {
       setLoading(true);
       setVotedResult(null);
+      setVoteError('');
       let url = '/api/game/random';
       if (excludeId) url += `?exclude_id=${excludeId}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setItem(data);
-        setUserRating('7.0');
+        loadTimeRef.current = Date.now();
+        const stored = localStorage.getItem('budicheck_voted_' + data.id);
+        if (stored) {
+          setPrevVote(parseFloat(stored));
+          setUserRating(stored);
+        } else {
+          setPrevVote(null);
+          setUserRating('7.0');
+        }
       } else {
         setItem(null);
       }
@@ -71,21 +84,30 @@ export default function BudiGame({ onPlayItem }) {
     if (!item || submitting) return;
     try {
       setSubmitting(true);
+      setVoteError('');
       const parsedRating = Math.min(10, Math.max(0, Math.round((parseFloat(String(userRating).replace(',', '.')) || 0) * 10) / 10));
       const res = await fetch('/api/game/vote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           check_id: item.id,
-          rating: parsedRating
+          rating: parsedRating,
+          hp_token: hpToken,
+          client_ts: loadTimeRef.current
         })
       });
       if (res.ok) {
         const data = await res.json();
         setVotedResult(data);
+        localStorage.setItem('budicheck_voted_' + item.id, String(parsedRating));
+        setPrevVote(parsedRating);
+      } else {
+        const errData = await res.json();
+        setVoteError(errData.detail || 'Nem sikerült elküldeni a szavazatot.');
       }
     } catch (e) {
       console.error('Failed to submit vote:', e);
+      setVoteError('Hálózati hiba történt a szavazat rögzítésekor.');
     } finally {
       setSubmitting(false);
     }
@@ -293,14 +315,56 @@ export default function BudiGame({ onPlayItem }) {
 
               {/* INTERACTION / VOTING / RESULTS SIDE */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '14px', border: '1px solid var(--border-color)' }}>
+                {/* Honeypot field for bot detection */}
+                <input
+                  type="text"
+                  name="hp_field"
+                  value={hpToken}
+                  onChange={(e) => setHpToken(e.target.value)}
+                  tabIndex={-1}
+                  autoComplete="off"
+                  style={{ position: 'absolute', left: '-9999px', opacity: 0, pointerEvents: 'none' }}
+                />
+
                 {!votedResult ? (
                   <div>
                     <h4 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fff', marginBottom: '0.5rem' }}>
                       Szerinted hány pontot érdemel?
                     </h4>
-                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
                       Nézd meg a budi elrendezését, csempézését és hangulatát! Add meg a pontszámod a 0-10 skálán:
                     </p>
+
+                    {prevVote !== null && (
+                      <div style={{
+                        background: 'rgba(0, 242, 254, 0.1)',
+                        border: '1px solid rgba(0, 242, 254, 0.3)',
+                        color: 'var(--accent-cyan)',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        marginBottom: '1.2rem',
+                        textAlign: 'center'
+                      }}>
+                        ℹ️ Erre a budira már szavaztál korábban (<strong>{prevVote} pont</strong>). Új pontszámmal módosíthatod a szavazatodat!
+                      </div>
+                    )}
+
+                    {voteError && (
+                      <div style={{
+                        background: 'rgba(255, 77, 109, 0.15)',
+                        border: '1px solid rgba(255, 77, 109, 0.4)',
+                        color: '#ff4d6d',
+                        padding: '0.6rem 0.8rem',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        marginBottom: '1rem',
+                        textAlign: 'center'
+                      }}>
+                        ⚠️ {voteError}
+                      </div>
+                    )}
 
                     {/* DIRECT TYPED INPUT FIELD (0.0 - 10.0, 1 decimal place) */}
                     <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
@@ -410,12 +474,27 @@ export default function BudiGame({ onPlayItem }) {
                       }}
                     >
                       <Sparkles size={18} />
-                      <span>{submitting ? 'Szavazat rögzítése...' : '⭐ Szavazok & Jani Értékelésének Felfedése!'}</span>
+                      <span>{submitting ? 'Szavazat rögzítése...' : (prevVote !== null ? '🔄 Szavazatom Módosítása' : '⭐ Szavazok & Jani Értékelésének Felfedése!')}</span>
                     </button>
                   </div>
                 ) : (
                   /* REVEALED RESULTS VIEW */
                   <div>
+                    {votedResult.is_updated && (
+                      <div style={{
+                        background: 'rgba(6, 214, 160, 0.15)',
+                        border: '1px solid var(--accent-green)',
+                        color: 'var(--accent-green)',
+                        padding: '0.5rem 0.8rem',
+                        borderRadius: '8px',
+                        fontSize: '0.82rem',
+                        fontWeight: 800,
+                        marginBottom: '0.85rem',
+                        textAlign: 'center'
+                      }}>
+                        ✨ A korábbi szavazatodat sikeresen frissítettük a közösségi rangsorban!
+                      </div>
+                    )}
                     <div style={{
                       background: 'rgba(255, 255, 255, 0.04)',
                       padding: '1rem',

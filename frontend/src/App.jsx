@@ -10,6 +10,7 @@ import ReportModal from './components/ReportModal';
 import AdminPanel from './components/AdminPanel';
 import BudiGame from './components/BudiGame';
 import TopographicBackground from './components/TopographicBackground';
+import Footer from './components/Footer';
 import { Sparkles, RefreshCw, Trophy, Shield } from 'lucide-react';
 
 export default function App() {
@@ -41,6 +42,7 @@ export default function App() {
   const [playingItem, setPlayingItem] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [reportingItem, setReportingItem] = useState(null);
+  const [reportingGeneral, setReportingGeneral] = useState(false);
 
   // Admin session reactive state
   const [hasAdminSession, setHasAdminSession] = useState(() => {
@@ -81,12 +83,18 @@ export default function App() {
       checkAdminSession();
     };
 
+    const handleItemUpdated = () => {
+      fetchChecks();
+    };
+
     checkAdminSession();
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('budicheck_auth_changed', handleAuthChange);
+    window.addEventListener('budicheck_item_updated', handleItemUpdated);
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('budicheck_auth_changed', handleAuthChange);
+      window.removeEventListener('budicheck_item_updated', handleItemUpdated);
     };
   }, [isAdminRoute]);
 
@@ -194,6 +202,7 @@ export default function App() {
         onGoToAdmin={navigateToAdmin}
         isAdminView={isAdminRoute}
         hasAdminSession={hasAdminSession}
+        onOpenGeneralReport={() => setReportingGeneral(true)}
       />
 
       {isAdminRoute ? (
@@ -289,6 +298,15 @@ export default function App() {
         </main>
       )}
 
+      {/* FOOTER (PUBLIC VIEW) */}
+      {!isAdminRoute && (
+        <Footer
+          status={status}
+          checksCount={items.length}
+          onOpenGeneralReport={() => setReportingGeneral(true)}
+        />
+      )}
+
       {/* VIDEO MODAL */}
       {playingItem && (
         <VideoModal
@@ -317,6 +335,17 @@ export default function App() {
         <ReportModal
           item={reportingItem}
           onClose={() => setReportingItem(null)}
+          onSuccess={() => {
+            fetchStatus();
+          }}
+        />
+      )}
+
+      {/* GENERAL FEEDBACK / BUG REPORT MODAL */}
+      {reportingGeneral && (
+        <ReportModal
+          isGeneral={true}
+          onClose={() => setReportingGeneral(false)}
           onSuccess={() => {
             fetchStatus();
           }}

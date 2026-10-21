@@ -17,6 +17,7 @@ __pycache__/
 # Temporary test audio, video & snapshots
 *.mp3
 *.wav
+*.m4a
 *.mp4
 *.mkv
 *.avi

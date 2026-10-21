@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Save, Clock, Target, Loader2 } from 'lucide-react';
+import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight } from 'lucide-react';
 
 export default function EditModal({ item, onSave, onClose }) {
   if (!item) return null;
@@ -8,9 +8,53 @@ export default function EditModal({ item, onSave, onClose }) {
   const [rating, setRating] = useState(item.rating || 7.0);
   const [quote, setQuote] = useState(item.quote || '');
   const [timestamp, setTimestamp] = useState(item.timestamp_formatted || '');
+  const [screenshotUrl, setScreenshotUrl] = useState(item.screenshot_url || '');
   const [syncingTime, setSyncingTime] = useState(false);
   const [syncingGame, setSyncingGame] = useState(false);
+  const [resnapshotting, setResnapshotting] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
+
+  const handleResnapshot = async (offsetSec = 0) => {
+    setResnapshotting(true);
+    setSyncMsg(null);
+    try {
+      const token = localStorage.getItem('budicheck_admin_token') || '';
+      const res = await fetch(`/api/checks/${item.id}/resnapshot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({
+          offset_sec: offsetSec,
+          force: true
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const freshUrl = `${data.screenshot_url}?t=${Date.now()}`;
+        setScreenshotUrl(freshUrl);
+        setTimestamp(data.timestamp_formatted);
+        setSyncMsg({
+          type: 'success',
+          text: `📸 Siker! Új képkocka kivágva (${data.timestamp_formatted}).`
+        });
+        item.screenshot_url = data.screenshot_url;
+        item.timestamp_sec = data.timestamp_sec;
+        item.timestamp_formatted = data.timestamp_formatted;
+        window.dispatchEvent(new CustomEvent('budicheck_item_updated', { detail: data.item }));
+      } else {
+        setSyncMsg({
+          type: 'error',
+          text: data.detail || 'Nem sikerült újraképkockázni a videót.'
+        });
+      }
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: 'Hálózati hiba az újraképkockázás közben.' });
+    } finally {
+      setResnapshotting(false);
+    }
+  };
 
   const handleSyncGameTitle = async () => {
     setSyncingGame(true);
@@ -59,12 +103,16 @@ export default function EditModal({ item, onSave, onClose }) {
       const data = await res.json();
       if (res.ok && data.success) {
         setTimestamp(data.item.timestamp_formatted);
+        if (data.item.screenshot_url) {
+          setScreenshotUrl(`${data.item.screenshot_url}?t=${Date.now()}`);
+        }
         setSyncMsg({
           type: 'success',
           text: `🎯 Siker! Megtalálva: ${data.item.timestamp_formatted} (${data.item.timestamp_sec}s)! A kép és videó automatikusan szinkronizálva.`
         });
         if (data.item.game_title) setGameTitle(data.item.game_title);
         if (data.item.rating !== undefined) setRating(data.item.rating);
+        window.dispatchEvent(new CustomEvent('budicheck_item_updated', { detail: data.item }));
       } else {
         setSyncMsg({
           type: 'error',
@@ -85,15 +133,125 @@ export default function EditModal({ item, onSave, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Bejegyzés Szerkesztése</h3>
+          <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Bejegyzés Szerkesztése</h3>
           <button className="btn btn-secondary btn-icon" onClick={onClose}>
             <X size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="modal-body">
+          {/* Screenshot Preview & Recut Control Bar */}
+          <div className="form-group" style={{
+            background: 'rgba(0, 0, 0, 0.45)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '10px',
+            padding: '10px',
+            marginBottom: '1rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Camera size={15} style={{ color: 'var(--accent-cyan)' }} />
+                <span>Képernyőkép & Újravágás</span>
+              </label>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                {timestamp}
+              </span>
+            </div>
+
+            <div style={{
+              position: 'relative',
+              width: '100%',
+              height: '185px',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              background: '#090b10',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              marginBottom: '10px'
+            }}>
+              <img
+                src={screenshotUrl || '/screenshots/placeholder.jpg'}
+                alt="Budi preview"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80'; }}
+              />
+              {resnapshotting && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.75)',
+                  backdropFilter: 'blur(4px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  color: 'var(--accent-cyan)',
+                  zIndex: 5
+                }}>
+                  <Loader2 size={28} className="spin" />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
+                    📸 Új képkocka kivágása a YouTube videóból...
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Recut buttons: -3s, AI Vision resnapshot, +3s */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => handleResnapshot(-3)}
+                disabled={resnapshotting}
+                style={{ fontSize: '0.8rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="3 másodperccel korábbi pillanat kivágása"
+              >
+                <ChevronLeft size={14} />
+                <span>-3 mp</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => handleResnapshot(0)}
+                disabled={resnapshotting}
+                style={{
+                  fontSize: '0.82rem',
+                  padding: '6px 12px',
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, var(--accent-cyan) 0%, #0099ff 100%)',
+                  fontWeight: 700,
+                  color: '#000'
+                }}
+                title="A jelenlegi időpont körül új képkockákat vizsgál meg, és AI segítségével a legtisztább budi képet választja ki"
+              >
+                {resnapshotting ? <Loader2 size={14} className="spin" /> : <Camera size={14} />}
+                <span>📸 Kép Újravágása (AI Vision)</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => handleResnapshot(3)}
+                disabled={resnapshotting}
+                style={{ fontSize: '0.8rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="3 másodperccel későbbi pillanat kivágása"
+              >
+                <span>+3 mp</span>
+                <ChevronRight size={14} />
+              </button>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '6px', textAlign: 'center' }}>
+              Tipp: Ha Jani később ért be a mosdóba, kattints a <strong>+3 mp</strong>-re, vagy az <strong>Újravágás</strong>ra!
+            </div>
+          </div>
+
           <div className="form-group">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '6px' }}>
               <label className="form-label" style={{ margin: 0 }}>🎮 Játék Neve</label>
@@ -178,9 +336,6 @@ export default function EditModal({ item, onSave, onClose }) {
                 {syncMsg.text}
               </div>
             )}
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-              Ha megváltoztatod az időt, a rendszer automatikusan új képkockát vág ki a videóból és a beágyazott lejátszót is átállítja!
-            </p>
           </div>
 
           <div className="form-group">

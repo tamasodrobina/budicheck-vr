@@ -3,6 +3,8 @@ import json
 import re
 import time
 import random
+import shutil
+import subprocess
 import concurrent.futures
 from typing import List, Dict, Any, Optional
 from google import genai
@@ -12,6 +14,17 @@ from PIL import Image
 from .config import get_gemini_api_key, load_config
 from .database import db, SCREENSHOTS_DIR
 from .game_detector import detect_game_title_from_video
+
+def get_ffmpeg_path() -> str:
+    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "ffmpeg.exe"))
+    if os.path.exists(local_bin):
+        return local_bin
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    return shutil.which("ffmpeg") or "ffmpeg"
 
 def get_client() -> Optional[genai.Client]:
     api_key = get_gemini_api_key()
@@ -119,7 +132,6 @@ SUPPORTED_MODELS = [
     {"id": "gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash-Lite (Gyors - Nagy kvóta)"},
     {"id": "gemini-3.7-flash", "name": "Gemini 3.7 Flash"},
     {"id": "gemini-3.5-flash", "name": "Gemini 3.5 Flash"},
-    {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Preview - Napi 20 limit)"},
     {"id": "gemini-flash-latest", "name": "Gemini Flash (Hivatalos legfrissebb)"},
 ]
 
@@ -128,8 +140,7 @@ FALLBACK_MODELS = [
     "gemini-3.1-flash-lite",
     "gemini-3.7-flash",
     "gemini-3.5-flash",
-    "gemini-flash-latest",
-    "gemini-3.8-flash"
+    "gemini-flash-latest"
 ]
 
 _quota_cache = {
@@ -335,22 +346,28 @@ Keresd meg az összes Budi Check / mosdó értékelés jelenetet az utasítások
 
     return None
 
-def analyze_audio_with_gemini(video_id: str, video_title: str, audio_path: str, video_duration: float = 0.0) -> Optional[List[Dict[str, Any]]]:
-    client = get_client()
-    if not client:
-        return None
-
+def _analyze_single_audio_file(
+    client: genai.Client,
+    video_id: str,
+    video_title: str,
+    audio_path: str,
+    segment_duration: float,
+    slice_start_sec: float = 0.0,
+    slice_label: str = ""
+) -> Optional[List[Dict[str, Any]]]:
+    """Helper to upload and analyze a single audio file/slice with Gemini."""
     if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
         return None
 
     uploaded_file = None
     try:
         size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-        db.add_log(f"☁️ [Gemini AI] Hangfájl feltöltése a felhőbe közvetlen hallgatáshoz ({size_mb:.1f} MB)...", "info")
+        prefix = f" [{slice_label}]" if slice_label else ""
+        db.add_log(f"☁️ [Gemini AI]{prefix} Hangfájl feltöltése a felhőbe ({size_mb:.1f} MB)...", "info")
         
         uploaded_file = client.files.upload(file=audio_path)
         
-        # Wait for file to become active in Google cloud (important for large files)
+        # Wait for file to become active in Google cloud
         for _ in range(45):
             if uploaded_file.state and uploaded_file.state.name == "ACTIVE":
                 break
@@ -360,10 +377,23 @@ def analyze_audio_with_gemini(video_id: str, video_title: str, audio_path: str, 
             except Exception:
                 pass
 
-        db.add_log(f"🎧 [Gemini AI] Hangfájl felkészítve! Magyar beszéd közvetlen intelligens meghallgatása...", "info")
+        dur_str = f"{int(segment_duration // 60)} perc {int(segment_duration % 60)} másodperc ({segment_duration:.0f} mp)" if segment_duration > 0 else "ismeretlen"
+        
+        if slice_start_sec > 0 or slice_label:
+            prompt = f"""
+Videó címe: "{video_title}"
+YouTube Azonosító: {video_id}
+Ez a hanganyag egy {int(segment_duration // 60)} perces részlet a videóból az alábbi idősávban: {slice_label or dur_str}.
 
-        dur_str = f"{int(video_duration // 60)} perc {int(video_duration % 60)} másodperc ({video_duration:.0f} mp)" if video_duration > 0 else "ismeretlen"
-        prompt = f"""
+Hallgasd végig a mellékelt magyar nyelvű hanganyagot (WeAreTheVR videó).
+Keresd meg azokat a részeket, ahol mosdót / WC-t / budit értékelnek vagy ellenőriznek ("Budi Check").
+SZABÁLY:
+A talált "start_sec" és "start_time" relatív legyen ehhez a részlethez képest (0 másodperctől {int(segment_duration)} másodpercig).
+Add meg a pontszámot (0-10, pl. 4.5), a szó szerinti elhangzott magyar mondatokat (quote), és a kulcsszót.
+Válaszolj szigorúan JSON formátumban a megadott séma szerint!
+"""
+        else:
+            prompt = f"""
 Videó címe: "{video_title}"
 YouTube Azonosító: {video_id}
 Videó teljes hossza: {dur_str}
@@ -401,10 +431,20 @@ Válaszolj szigorúan JSON formátumban a megadott séma szerint!
 
                     data = json.loads(clean_json)
                     matches = data.get("matches", [])
+                    adjusted = []
                     for m in matches:
-                        m["start_sec"] = parse_scene_timestamp(m, video_duration)
-                    db.add_log(f"✨ [Gemini AI Audió] Sikeres hallgatási elemzés ({m_name})! Találatok: {len(matches)}", "success" if matches else "info")
-                    return matches
+                        rel_sec = parse_scene_timestamp(m, segment_duration)
+                        abs_sec = round(slice_start_sec + rel_sec, 1)
+                        m["start_sec"] = abs_sec
+                        secs = int(abs_sec)
+                        hh = secs // 3600
+                        mm = (secs % 3600) // 60
+                        ss = secs % 60
+                        m["start_time"] = f"{hh:02d}:{mm:02d}:{ss:02d}" if hh > 0 else f"{mm:02d}:{ss:02d}"
+                        adjusted.append(m)
+
+                    db.add_log(f"✨ [Gemini AI Audió]{prefix} Sikeres hallgatási elemzés ({m_name})! Találatok: {len(adjusted)}", "success" if adjusted else "info")
+                    return adjusted
 
                 except Exception as e_m:
                     err_str = str(e_m)
@@ -434,6 +474,113 @@ Válaszolj szigorúan JSON formátumban a megadott séma szerint!
                 pass
 
     return None
+
+def analyze_audio_with_gemini(video_id: str, video_title: str, audio_path: str, video_duration: float = 0.0) -> Optional[List[Dict[str, Any]]]:
+    """
+    Intelligently analyzes video audio with Gemini.
+    - For normal videos (< 2.5 hours = 9000s): processes single audio file directly.
+    - For marathon videos (>= 2.5 hours): slices audio with FFmpeg into 40-minute overlapping windows
+      with 3-minute overlap, preventing Gemini token overflow and eliminating boundary misses!
+    """
+    client = get_client()
+    if not client:
+        return None
+
+    if not os.path.exists(audio_path) or os.path.getsize(audio_path) < 1000:
+        return None
+
+    MARATHON_THRESHOLD_SEC = 2.5 * 3600  # 9000 seconds (2.5 hours)
+    
+    # If the video is 2.5+ hours long, apply overlapping sliding window chunking!
+    if video_duration >= MARATHON_THRESHOLD_SEC:
+        CHUNK_SEC = 2400.0   # 40 minutes per slice
+        OVERLAP_SEC = 180.0  # 3 minutes overlap buffer
+        STEP_SEC = CHUNK_SEC - OVERLAP_SEC  # 37 minutes advance
+
+        slices = []
+        curr = 0.0
+        while curr < video_duration:
+            dur = min(CHUNK_SEC, video_duration - curr)
+            if dur < 30.0:
+                break
+            slices.append((curr, dur))
+            curr += STEP_SEC
+            if curr + 60.0 >= video_duration:
+                break
+
+        dur_hours = video_duration / 3600.0
+        db.add_log(
+            f"✂️ [Maratoni Videó - Átfedéses Szeletelés]: {dur_hours:.1f} órás hanganyag feldarabolása "
+            f"{len(slices)} db 40 perces szeletre (3 perc átfedéssel a határokon a budik elvesztése ellen)...",
+            "info"
+        )
+
+        ffmpeg_exe = get_ffmpeg_path()
+        data_dir = os.path.dirname(audio_path)
+        all_matches = []
+
+        for idx, (s_start, s_dur) in enumerate(slices):
+            s_start_fmt = f"{int(s_start//3600):02d}:{int((s_start%3600)//60):02d}:{int(s_start%60):02d}"
+            s_end = s_start + s_dur
+            s_end_fmt = f"{int(s_end//3600):02d}:{int((s_end%3600)//60):02d}:{int(s_end%60):02d}"
+            slice_file = os.path.join(data_dir, f"slice_{video_id}_{idx}.m4a")
+
+            cmd = [
+                ffmpeg_exe,
+                '-y',
+                '-ss', str(s_start),
+                '-i', audio_path,
+                '-t', str(s_dur),
+                '-c', 'copy',
+                slice_file
+            ]
+            try:
+                subprocess.run(cmd, capture_output=True, timeout=45)
+            except Exception as e_cut:
+                db.add_log(f"⚠️ Hiba a szelet kivágásakor ({s_start_fmt}): {e_cut}", "warning")
+                continue
+
+            if not os.path.exists(slice_file) or os.path.getsize(slice_file) < 1000:
+                continue
+
+            try:
+                slice_label = f"{s_start_fmt} - {s_end_fmt}"
+                db.add_log(f"🎧 [Szelet {idx+1}/{len(slices)}]: {slice_label} meghallgatása és elemzése...", "info")
+                s_matches = _analyze_single_audio_file(
+                    client=client,
+                    video_id=video_id,
+                    video_title=video_title,
+                    audio_path=slice_file,
+                    segment_duration=s_dur,
+                    slice_start_sec=s_start,
+                    slice_label=slice_label
+                )
+                if s_matches:
+                    for m in s_matches:
+                        # Deduplicate across overlap windows:
+                        # If a match within 90s already exists in all_matches, ignore duplicate
+                        is_dup = any(abs(m["start_sec"] - ex["start_sec"]) <= 90.0 for ex in all_matches)
+                        if not is_dup:
+                            all_matches.append(m)
+            finally:
+                if os.path.exists(slice_file):
+                    try:
+                        os.remove(slice_file)
+                    except Exception:
+                        pass
+
+        db.add_log(f"✨ [Maratoni Videó Kész]: {len(slices)} szelet feldolgozva, összesen {len(all_matches)} budi check találat!", "success" if all_matches else "info")
+        return all_matches
+
+    # Standard analysis for normal videos (< 2.5 hours)
+    return _analyze_single_audio_file(
+        client=client,
+        video_id=video_id,
+        video_title=video_title,
+        audio_path=audio_path,
+        segment_duration=video_duration,
+        slice_start_sec=0.0
+    )
 
 def extract_game_title(video_id: str, video_title: str, video_description: str = "", intro_transcript_text: str = "", timestamp_sec: float = 0.0) -> str:
     """Extracts the actual game title (e.g. 'Silent Hill 2 Remake', 'Lobotomy', 'Silent Wounds: The Doll', 'Black Pines')."""

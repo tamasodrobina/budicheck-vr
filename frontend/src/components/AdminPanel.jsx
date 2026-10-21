@@ -4,7 +4,7 @@ import {
   Search, Sparkles, Key, CheckCircle, AlertTriangle, ExternalLink, 
   Settings, ChevronDown, ChevronUp, Copy, Check, ArrowDown, 
   Lock, Unlock, Shield, LogOut, ArrowLeft, RefreshCw, Zap,
-  Database, UserCheck, Bug, CheckSquare, Edit3, X, Filter, Eye, Target
+  Database, UserCheck, Bug, CheckSquare, Edit3, X, Filter, Eye, Target, Camera
 } from 'lucide-react';
 
 export default function AdminPanel({ 
@@ -328,6 +328,36 @@ export default function AdminPanel({
       alert('Hálózati hiba az időpont szinkronizálásakor.');
     } finally {
       setSyncingCheckId(null);
+    }
+  };
+
+  const [resnapshottingId, setResnapshottingId] = useState(null);
+
+  const handleResnapshotAdmin = async (checkId, offsetSec = 0) => {
+    setResnapshottingId(checkId);
+    try {
+      const res = await fetch(`/api/checks/${checkId}/resnapshot`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        },
+        body: JSON.stringify({
+          offset_sec: offsetSec,
+          force: true
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setChecksList(prev => prev.map(c => c.id === checkId ? { ...data.item, screenshot_url: `${data.screenshot_url}?t=${Date.now()}` } : c));
+        onRefreshChecks();
+      } else {
+        alert(data.detail || 'Nem sikerült újraképkockázni a videót.');
+      }
+    } catch (e) {
+      alert('Hálózati hiba az újraképkockázás közben.');
+    } finally {
+      setResnapshottingId(null);
     }
   };
 
@@ -1147,6 +1177,17 @@ export default function AdminPanel({
 
                   {/* Right: Actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
+                      onClick={() => handleResnapshotAdmin(item.id, 0)}
+                      disabled={resnapshottingId === item.id}
+                      title="Képkocka újravágása a videóból AI képválasztással"
+                    >
+                      <Camera size={13} className={resnapshottingId === item.id ? 'spin' : ''} />
+                      <span>{resnapshottingId === item.id ? 'Vágás...' : '📸 Újravágás'}</span>
+                    </button>
+
                     <button
                       className="btn btn-secondary"
                       style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', borderColor: '#ffb703', color: '#ffb703' }}

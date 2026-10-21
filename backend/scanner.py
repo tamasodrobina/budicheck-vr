@@ -229,12 +229,12 @@ def extract_rating_from_text(text: str) -> float:
 
     return 7.0
 
-def capture_screenshot(video_id: str, timestamp_sec: float) -> Optional[str]:
+def capture_screenshot(video_id: str, timestamp_sec: float, force: bool = False) -> Optional[str]:
     filename = f"{video_id}_{int(timestamp_sec)}.jpg"
     filepath = os.path.join(SCREENSHOTS_DIR, filename)
     rel_url = f"/screenshots/{filename}"
     
-    if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
+    if not force and os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
         return rel_url
         
     video_url = f"https://www.youtube.com/watch?v={video_id}"
@@ -264,13 +264,14 @@ def capture_screenshot(video_id: str, timestamp_sec: float) -> Optional[str]:
                 timestamp_sec = min(timestamp_sec, max(0.0, duration - 2.0))
 
             # Multi-frame toilet vision: candidate frames around timestamp
-            # We sample from timestamp through the next 15 seconds as players approach the toilet
+            # We sample from -2s up through 12s as players approach or interact with the toilet
             raw_candidates = [
+                max(0.0, timestamp_sec - 2.0),
                 max(0.0, timestamp_sec),
-                max(0.0, timestamp_sec + 3.0),
-                max(0.0, timestamp_sec + 6.0),
-                max(0.0, timestamp_sec + 10.0),
-                max(0.0, timestamp_sec + 15.0)
+                max(0.0, timestamp_sec + 2.5),
+                max(0.0, timestamp_sec + 5.0),
+                max(0.0, timestamp_sec + 8.0),
+                max(0.0, timestamp_sec + 12.0)
             ]
             if duration > 5.0:
                 candidate_times = [min(c, max(0.0, duration - 1.0)) for c in raw_candidates]
@@ -448,7 +449,21 @@ def get_ydl_opts(base_opts: dict) -> dict:
         opts['js_runtimes'] = {'node': {'path': node_exe}}
         
     if best_cookie:
-        opts['cookiefile'] = best_cookie
+        # Biztonsági másolat készítése: a yt-dlp alapból felülírja a megadott cookiefile-t,
+        # ezért egy munkamásolatot (worker_cookies.txt) használunk, hogy a felhasználó eredeti
+        # cookie fájlja soha ne sérüljön vagy törlődjön!
+        worker_cookie = os.path.join(DATA_DIR, "worker_cookies.txt")
+        try:
+            shutil.copyfile(best_cookie, worker_cookie)
+            opts['cookiefile'] = worker_cookie
+        except Exception:
+            opts['cookiefile'] = best_cookie
+            
+        # Sütikkel a 'web', 'mweb' és 'tv' kliensek működnek hivatalosan
+        opts['extractor_args'] = {'youtube': {'player_client': ['web', 'mweb', 'tv']}}
+    else:
+        opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios', 'mweb', 'web']}}
+        
     return opts
 
 def transcribe_audio_fallback(video_id: str) -> List[Dict[str, Any]]:
@@ -868,8 +883,10 @@ class VideoScanner:
                     db.add_log(f"🌐 [Tier 1] Angol felirat magyarítva: '{v_title}' ({len(transcript)} sor)", "info")
                 except Exception:
                     pass
-        except Exception:
-            pass
+        except Exception as e_tl:
+            err_msg = str(e_tl)
+            if "blocked" in err_msg.lower() or "too many" in err_msg.lower() or "ip" in err_msg.lower():
+                db.add_log(f"⚠️ YouTube felirat-lekérési IP korlátozás észlelve ({v_id}).", "warning")
 
         # Identify game title automatically from video intro speech / title
         game_title = v_title
@@ -1000,10 +1017,31 @@ class VideoScanner:
             total_videos = len(videos)
             db.scan_state["total_channel_videos"] = total_videos
             
+            # Intelligens sorrend: Normál videók (< 2.5 óra = 9000 mp) előre vétele,
+            # a maratoni (≥ 2.5 óra) videók automatikusan a sor legvégére kerülnek!
+            MARATHON_THRESHOLD_SEC = 2.5 * 3600  # 9000 mp (2 óra 30 perc)
+            normal_videos = []
+            marathon_videos = []
+            for v in videos:
+                dur = float(v.get('duration') or 0.0)
+                if dur >= MARATHON_THRESHOLD_SEC:
+                    marathon_videos.append(v)
+                else:
+                    normal_videos.append(v)
+
+            videos = normal_videos + marathon_videos
+
             # Count already scanned videos
             already_scanned = sum(1 for v in videos if v.get('id') and db.is_video_scanned(v.get('id')))
             db.scan_state["processed_count"] = already_scanned
             remaining = total_videos - already_scanned
+
+            if marathon_videos:
+                db.add_log(
+                    f"📋 [Intelligens sorrend]: {len(normal_videos)} db normál videó (< 2.5 óra) előre véve, "
+                    f"{len(marathon_videos)} db hosszú maratoni videó (≥ 2.5 óra) a sor legvégére ütemezve!",
+                    "info"
+                )
 
             if already_scanned > 0:
                 db.add_log(f"📋 Összesen {total_videos} videó: {already_scanned} már korábban teljesen átnézve (kihagyva), {remaining} még nem ellenőrzött vagy félbemaradt videó vizsgálata indul!", "info")
@@ -1035,6 +1073,10 @@ class VideoScanner:
                     consecutive_seen = 0
 
                 self._process_single_video(video, idx, total_videos, api, force=False)
+                
+                # Kíméletes szünet a videók között a YouTube IP-blokkolás megelőzésére
+                if not self.stop_event.is_set():
+                    time.sleep(random.uniform(2.0, 3.5))
 
             db.scan_state["status"] = "completed"
             db.add_log("🎉 Keresési folyamat sikeresen befejeződött!", "success")
