@@ -31,6 +31,14 @@ DEFAULT_CONFIG = {
 _active_admin_tokens = set()
 
 def verify_admin_password(password: str) -> bool:
+    # 1. Environment variable support (highest priority, persistent on cloud like Render)
+    env_pass = os.environ.get("ADMIN_PASSWORD") or os.environ.get("BUDICHECK_ADMIN_PASSWORD")
+    if env_pass and env_pass.strip():
+        clean_env = env_pass.strip()
+        if password == clean_env or hash_password(password) == hash_password(clean_env):
+            return True
+
+    # 2. Config file fallback
     cfg = load_config()
     saved_hash = cfg.get("admin_password_hash", DEFAULT_PASSWORD_HASH)
     return hash_password(password) == saved_hash
