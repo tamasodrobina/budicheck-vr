@@ -309,6 +309,11 @@ export default function AdminPanel({
   };
 
   const handleSyncCheckTimestamp = async (checkId) => {
+    const targetItem = checksList.find(c => c.id === checkId);
+    if (targetItem && onEditCheck) {
+      onEditCheck(targetItem);
+      return;
+    }
     setSyncingCheckId(checkId);
     try {
       const res = await fetch(`/api/checks/${checkId}/sync-timestamp`, {
@@ -322,7 +327,7 @@ export default function AdminPanel({
         onRefreshChecks();
         onRefreshStatus();
       } else {
-        alert(data.detail || 'Nem sikerült az idézetet megtalálni a feliratban.');
+        alert(data.detail || 'A YouTube korlátozása (HTTP 429) miatt a felirat nem elérhető. Használd a Szerkesztés ablakot a beépített videóval!');
       }
     } catch (e) {
       alert('Hálózati hiba az időpont szinkronizálásakor.');
@@ -1193,7 +1198,7 @@ export default function AdminPanel({
                       style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', borderColor: '#ffb703', color: '#ffb703' }}
                       onClick={() => handleSyncCheckTimestamp(item.id)}
                       disabled={syncingCheckId === item.id}
-                      title="YouTube felirat alapján megkeresi az idézet pontos másodpercét és újravágja a képet"
+                      title="Időbélyeg ellenőrzése és beállítása a beépített videólejátszóval"
                     >
                       <Target size={13} className={syncingCheckId === item.id ? 'spin' : ''} />
                       <span>{syncingCheckId === item.id ? 'Szinkron...' : '🎯 Idő Szinkron'}</span>

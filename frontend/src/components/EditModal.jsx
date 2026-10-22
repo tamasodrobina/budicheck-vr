@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight, AlertTriangle, Image as ImageIcon, Video as VideoIcon, ExternalLink } from 'lucide-react';
 
 export default function EditModal({ item, onSave, onClose }) {
   if (!item) return null;
@@ -9,12 +9,22 @@ export default function EditModal({ item, onSave, onClose }) {
   const [quote, setQuote] = useState(item.quote || '');
   const [timestamp, setTimestamp] = useState(item.timestamp_formatted || '');
   const [screenshotUrl, setScreenshotUrl] = useState(item.screenshot_url || '');
+  const [mediaMode, setMediaMode] = useState('image');
   const [syncingTime, setSyncingTime] = useState(false);
   const [syncingGame, setSyncingGame] = useState(false);
   const [resnapshotting, setResnapshotting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
+
+  const getSecondsFromFormatted = (str) => {
+    if (!str) return 0;
+    const parts = str.toString().trim().split(':').map(Number);
+    if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+    if (parts.length === 2) return (parts[0] * 60) + parts[1];
+    const n = parseFloat(str);
+    return isNaN(n) ? 0 : Math.floor(n);
+  };
 
   const handleResnapshot = async (offsetSec = 0) => {
     setResnapshotting(true);
@@ -160,51 +170,86 @@ export default function EditModal({ item, onSave, onClose }) {
             padding: '10px',
             marginBottom: '1rem'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Camera size={15} style={{ color: 'var(--accent-cyan)' }} />
-                <span>Képernyőkép & Újravágás</span>
-              </label>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
-                {timestamp}
-              </span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Média Előnézet</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.08)', padding: '2px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <button
+                    type="button"
+                    className={`btn ${mediaMode === 'image' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px' }}
+                    onClick={() => setMediaMode('image')}
+                  >
+                    <ImageIcon size={12} />
+                    <span>Kép</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${mediaMode === 'video' ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px' }}
+                    onClick={() => setMediaMode('video')}
+                  >
+                    <VideoIcon size={12} />
+                    <span>Videó</span>
+                  </button>
+                </div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontFamily: 'monospace' }}>
+                  {timestamp || '00:00'}
+                </span>
+              </div>
             </div>
 
             <div style={{
               position: 'relative',
               width: '100%',
-              height: '185px',
+              height: '210px',
               borderRadius: '8px',
               overflow: 'hidden',
               background: '#090b10',
               border: '1px solid rgba(255, 255, 255, 0.08)',
               marginBottom: '10px'
             }}>
-              <img
-                src={screenshotUrl || '/screenshots/placeholder.jpg'}
-                alt="Budi preview"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80'; }}
-              />
-              {resnapshotting && (
-                <div style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(0,0,0,0.75)',
-                  backdropFilter: 'blur(4px)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  color: 'var(--accent-cyan)',
-                  zIndex: 5
-                }}>
-                  <Loader2 size={28} className="spin" />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
-                    📸 Új képkocka kivágása a YouTube videóból...
-                  </span>
-                </div>
+              {mediaMode === 'image' ? (
+                <>
+                  <img
+                    src={screenshotUrl || '/screenshots/placeholder.jpg'}
+                    alt="Budi preview"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80'; }}
+                  />
+                  {resnapshotting && (
+                    <div style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: 'rgba(0,0,0,0.75)',
+                      backdropFilter: 'blur(4px)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      color: 'var(--accent-cyan)',
+                      zIndex: 5
+                    }}>
+                      <Loader2 size={28} className="spin" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
+                        📸 Új képkocka kivágása a YouTube videóból...
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <iframe
+                  src={`https://www.youtube.com/embed/${item.video_id}?start=${getSecondsFromFormatted(timestamp)}&autoplay=1`}
+                  title={item.video_title}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
               )}
             </div>
 
@@ -306,39 +351,108 @@ export default function EditModal({ item, onSave, onClose }) {
                 <Clock size={15} style={{ color: 'var(--accent-cyan)' }} />
                 <span>Időbélyeg (óó:pp:mp vagy mp)</span>
               </label>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleSyncTimestamp}
-                disabled={syncingTime}
-                style={{
-                  fontSize: '0.78rem',
-                  padding: '3px 8px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  color: 'var(--accent-cyan)',
-                  borderColor: 'rgba(0, 242, 254, 0.4)'
-                }}
-                title="A YouTube felirat alapján automatikusan megkeresi azt a másodpercet, ahol Jani kimondja az idézetet"
-              >
-                {syncingTime ? <Loader2 size={13} className="spin" /> : <Target size={13} />}
-                <span>{syncingTime ? 'Felirat keresése...' : '🎯 Idézet pontos idejének felderítése'}</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <a
+                  href={`https://www.youtube.com/watch?v=${item.video_id}&t=${Math.floor(getSecondsFromFormatted(timestamp))}s`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary"
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: '#ff4d4d',
+                    borderColor: 'rgba(255, 77, 77, 0.4)',
+                    textDecoration: 'none'
+                  }}
+                  title="Megnyitja a YouTube videót új lapon pontosan ezen a másodpercen"
+                >
+                  <ExternalLink size={12} />
+                  <span>YouTube</span>
+                </a>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleSyncTimestamp}
+                  disabled={syncingTime}
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    color: 'var(--accent-cyan)',
+                    borderColor: 'rgba(0, 242, 254, 0.4)'
+                  }}
+                  title="YouTube felirat alapján próbálja megkeresni az idézet másodpercét (Megjegyzés: a YouTube HTTP 429 botvédelme miatt a beépített 'Videó' előnézet ajánlott)"
+                >
+                  {syncingTime ? <Loader2 size={13} className="spin" /> : <Target size={13} />}
+                  <span>{syncingTime ? 'Keresés...' : '🎯 Idézet keresése feliratból'}</span>
+                </button>
+              </div>
             </div>
-            <input
-              className="form-input"
-              value={timestamp}
-              onChange={(e) => setTimestamp(e.target.value)}
-              placeholder="pl. 01:08:50 vagy 4130"
-              style={{ fontFamily: 'monospace', fontSize: '0.95rem' }}
-            />
+
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <input
+                className="form-input"
+                value={timestamp}
+                onChange={(e) => setTimestamp(e.target.value)}
+                placeholder="pl. 01:08:50 vagy 4130"
+                style={{ fontFamily: 'monospace', fontSize: '0.95rem', flex: 1 }}
+              />
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 8px', fontFamily: 'monospace' }}
+                  onClick={() => handleResnapshot(-10)}
+                  disabled={resnapshotting}
+                  title="10 másodperccel visszább és újravágás"
+                >
+                  -10s
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 8px', fontFamily: 'monospace' }}
+                  onClick={() => handleResnapshot(-3)}
+                  disabled={resnapshotting}
+                  title="3 másodperccel visszább és újravágás"
+                >
+                  -3s
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 8px', fontFamily: 'monospace' }}
+                  onClick={() => handleResnapshot(3)}
+                  disabled={resnapshotting}
+                  title="3 másodperccel előrébb és újravágás"
+                >
+                  +3s
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 8px', fontFamily: 'monospace' }}
+                  onClick={() => handleResnapshot(10)}
+                  disabled={resnapshotting}
+                  title="10 másodperccel előrébb és újravágás"
+                >
+                  +10s
+                </button>
+              </div>
+            </div>
+
             {syncMsg && (
               <div style={{
                 marginTop: '6px',
                 padding: '6px 10px',
                 borderRadius: '6px',
                 fontSize: '0.78rem',
+                lineHeight: '1.35',
                 background: syncMsg.type === 'success' ? 'rgba(6, 214, 160, 0.12)' : 'rgba(255, 77, 109, 0.12)',
                 color: syncMsg.type === 'success' ? '#06d6a0' : '#ff758f',
                 border: `1px solid ${syncMsg.type === 'success' ? 'rgba(6, 214, 160, 0.3)' : 'rgba(255, 77, 109, 0.3)'}`

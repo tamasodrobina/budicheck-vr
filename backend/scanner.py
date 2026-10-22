@@ -369,9 +369,8 @@ def parse_timestamp_str(ts_str: str) -> float:
         return 0.0
 
 def find_quote_timestamp_in_subtitles(video_id: str, quote: str) -> Optional[float]:
-    """Search YouTube Hungarian auto-generated subtitles for exact moment a quote was spoken."""
+    """Search YouTube Hungarian auto-generated or manual subtitles for exact moment a quote was spoken."""
     try:
-        import urllib.request
         ydl_opts = get_ydl_opts({
             'skip_download': True,
             'writeautomaticsub': True,
@@ -380,36 +379,56 @@ def find_quote_timestamp_in_subtitles(video_id: str, quote: str) -> Optional[flo
         })
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
-            subs = info.get('automatic_captions', {}).get('hu', [])
+            subs = info.get('subtitles', {}).get('hu', []) or info.get('automatic_captions', {}).get('hu', [])
             json3_sub = next((s['url'] for s in subs if s.get('ext') == 'json3'), None)
+            if not json3_sub and subs:
+                json3_sub = subs[0].get('url')
 
-        if not json3_sub:
-            return None
-
-        req = urllib.request.Request(json3_sub, headers={'User-Agent': 'Mozilla/5.0'})
-        data = json.loads(urllib.request.urlopen(req, timeout=15).read().decode('utf-8'))
-        events = data.get('events', [])
-
-        clean_words = [w.lower() for w in re.findall(r'\b[a-záéíóöőúüű]{4,}\b', quote.lower())]
-        if not clean_words:
-            return None
-
-        best_score = 0
-        best_time = None
-
-        # Check windows of 8 subtitle events
-        for i in range(len(events)):
-            window = events[i:i+8]
-            window_text = ' '.join(''.join(s.get('utf8', '') for s in ev.get('segs', [])).lower() for ev in window)
-            score = sum(1 for w in clean_words if w in window_text)
-            if score > best_score and score >= max(2, len(clean_words) // 4):
-                best_score = score
-                best_time = events[i].get('tStartMs', 0) / 1000.0
-
-        return best_time
+            if json3_sub:
+                try:
+                    res = ydl.urlopen(json3_sub)
+                    data = json.loads(res.read().decode('utf-8'))
+                    events = data.get('events', [])
+                    clean_words = [w.lower() for w in re.findall(r'\b[a-záéíóöőúüű]{4,}\b', quote.lower())]
+                    if clean_words and events:
+                        best_score = 0
+                        best_time = None
+                        for i in range(len(events)):
+                            window = events[i:i+8]
+                            window_text = ' '.join(''.join(s.get('utf8', '') for s in ev.get('segs', [])).lower() for ev in window)
+                            score = sum(1 for w in clean_words if w in window_text)
+                            if score > best_score and score >= max(2, len(clean_words) // 4):
+                                best_score = score
+                                best_time = events[i].get('tStartMs', 0) / 1000.0
+                        if best_time is not None:
+                            return best_time
+                except Exception as e_dl:
+                    print(f"Direct sub download error: {e_dl}")
     except Exception as e:
         print(f"Error searching subtitles for quote: {e}")
-        return None
+
+    # Fallback to youtube_transcript_api
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        raw_subs = api.list(video_id).find_transcript(['hu']).fetch()
+        clean_words = [w.lower() for w in re.findall(r'\b[a-záéíóöőúüű]{4,}\b', quote.lower())]
+        if clean_words and raw_subs:
+            best_score = 0
+            best_time = None
+            for i in range(len(raw_subs)):
+                window = raw_subs[i:i+8]
+                window_text = ' '.join(ev.get('text', '').lower() for ev in window)
+                score = sum(1 for w in clean_words if w in window_text)
+                if score > best_score and score >= max(2, len(clean_words) // 4):
+                    best_score = score
+                    best_time = float(raw_subs[i].get('start', 0.0))
+            if best_time is not None:
+                return best_time
+    except Exception as e_api:
+        print(f"YouTubeTranscriptApi fallback error: {e_api}")
+
+    return None
 
 CHUNK_DURATION_SEC = 90  # 1.5 minutes per chunk window for full speech context
 OVERLAP_SEC = 15         # 15 seconds overlap to ensure ratings and sentences are never cut mid-speech

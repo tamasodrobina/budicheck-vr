@@ -505,10 +505,34 @@ def sync_check_timestamp(check_id: str, admin: bool = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="Hiányzó videó vagy idézet az automatikus szinkronizáláshoz!")
 
     found_sec = find_quote_timestamp_in_subtitles(video_id, quote)
+    found_note = ""
+
+    # Chapter fallback only if subtitles are unavailable and current timestamp is 0 or missing
+    cur_timestamp = float(target.get("timestamp_sec") or 0.0)
+    if found_sec is None and cur_timestamp <= 5.0:
+        try:
+            from .scanner import get_ydl_opts
+            import yt_dlp
+            ydl_opts = get_ydl_opts({'skip_download': True, 'quiet': True})
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                chapters = info.get('chapters') or []
+                g_target = (target.get("game_title") or "").strip().lower()
+                for ch in chapters:
+                    ch_title = (ch.get("title") or "").strip().lower()
+                    if g_target and (g_target in ch_title or ch_title in g_target):
+                        ch_start = float(ch.get("start_time", 0.0))
+                        if ch_start > 0:
+                            found_sec = ch_start
+                            found_note = f" (YouTube fejezet alapján: {ch.get('title')})"
+                            break
+        except Exception:
+            pass
+
     if found_sec is None:
         raise HTTPException(
             status_code=404,
-            detail="Nem sikerült az idézet pontos időpontját automatikusan megtalálni a feliratban. Kérlek add meg manuálisan az időbélyeget!"
+            detail="A YouTube bot-védelme (HTTP 429) korlátozza a feliratok szerveroldali elérését. Kérlek használd a beépített 'Videó' előnézetet vagy a YouTube linket a pontos másodperc beállításához!"
         )
 
     new_sec = round(found_sec, 1)
@@ -547,7 +571,7 @@ def sync_check_timestamp(check_id: str, admin: bool = Depends(require_admin)):
     final_item = next((c for c in db.get_checks() if c["id"] == check_id), None)
     return {
         "success": True,
-        "message": f"Időpont sikeresen szinkronizálva: {new_fmt} ({new_sec}s)" + (f" ➔ Játék: {g_title}" if chapter_game else ""),
+        "message": f"Időpont sikeresen beállítva: {new_fmt} ({new_sec}s){found_note}" + (f" ➔ Játék: {g_title}" if chapter_game else ""),
         "item": final_item
     }
 
