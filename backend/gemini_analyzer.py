@@ -56,10 +56,11 @@ SZIGORÚ KÖVETELMÉNYEK:
    - Ha semleges, adj 6.5-öt.
 4. Idézet (quote):
    - Írd le szó szerint, természetes és hibátlan magyar helyesírással a legfontosabb elhangzott mondatokat (mit mondtak a budiról és az értékelésről).
-5. Időpontok (start_time, start_sec és verdict_sec):
-   - "start_sec": A budi check jelenet kezdete másodpercben (amikor Jani belép a mosdóba és megkezdi a szemlét).
-   - "verdict_sec": Az a másodperc, amikor Jani elkezdi KIMONDANI a pontszámot (pl. "Erre adok egy...", "Ez nálam egy 8-as"). A kvízjáték videója pont eddig a másodpercig fog játszani, hogy a játékosnak ne spoilerezze el a pontszámot a szavazás előtt!
-   - "start_time": A kezdő időpont szöveges formátumban (pl. "01:16:31" vagy "12:45").
+5. Időpontok (start_time, quote_sec, start_sec és verdict_sec):
+   - "quote_sec": KRITIKUS! Az a pontos másodperc, amikor Jani elkezdi KIMONDANI a fenti idézetet ("quote")! Ezen a másodpercen fog elindulni a YouTube videó, hogy a néző azonnal a mondatot hallja!
+   - "start_sec": Az a másodperc, ahol a WC / budi a legtisztábban, teljes valójában látható a képernyőn (ebből készül a vágott képernyőkép).
+   - "verdict_sec": Az a másodperc, amikor Jani elkezdi KIMONDANI a végső pontszámot (pl. "Erre adok egy...", "Ez nálam egy 8-as"). A kvízjáték videója pont eddig a másodpercig fog játszani, hogy a játékosnak ne spoilerezze el a pontszámot a szavazás előtt!
+   - "start_time": A mondat elhangzásának időpontja szöveges formátumban (pl. "01:16:31" vagy "12:45").
 
 SZIGORÚ VÁLASZFORMÁTUM:
 Kizárólag érvényes JSON formátumban válaszolj az alábbi séma szerint:
@@ -67,7 +68,8 @@ Kizárólag érvényes JSON formátumban válaszolj az alábbi séma szerint:
   "matches": [
     {
       "start_time": "01:16:31",
-      "start_sec": 4591.5,
+      "quote_sec": 4591.5,
+      "start_sec": 4588.0,
       "verdict_sec": 4604.0,
       "rating": 5.0,
       "matched_keyword": "budi check",
@@ -80,8 +82,18 @@ Ha nincs a videóban budi check, a válaszod ez legyen: {"matches": []}
 """
 
 def parse_scene_timestamp(m: Dict[str, Any], video_duration: float = 0.0) -> float:
-    """Parses timestamps accurately from Gemini responses. Handles 'MM:SS', 'HH:MM:SS',
-    and detects accidental MMSS/HHMMSS float concatenations (like 7631.5 -> 76m 31.5s = 4591.5s)."""
+    """Parses timestamps accurately from Gemini responses. Prioritizes quote_sec
+    (exact moment Jani speaks the quote), followed by textual start_time, then start_sec."""
+    # 0. Check quote_sec first (exact moment Jani starts speaking the quote)
+    raw_quote = m.get("quote_sec")
+    if raw_quote is not None:
+        try:
+            q_sec = float(raw_quote)
+            if q_sec > 0 and (video_duration <= 0 or q_sec <= video_duration):
+                return q_sec
+        except (TypeError, ValueError):
+            pass
+
     # 1. Textual start_time (e.g. "01:16:31", "76:31", "12:45")
     st = str(m.get("start_time", "")).strip()
     if st and ":" in st:

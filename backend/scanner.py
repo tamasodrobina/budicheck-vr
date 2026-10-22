@@ -806,7 +806,10 @@ class VideoScanner:
                 })
         return items
 
-    def _save_budi_check_entry(self, video_id: str, video_title: str, start_sec: float, rating: float, quote: str, kw: str, game_title: str = ""):
+    def _save_budi_check_entry(
+        self, video_id: str, video_title: str, start_sec: float, rating: float, quote: str, kw: str,
+        game_title: str = "", verdict_sec: Optional[float] = None, visual_sec: Optional[float] = None
+    ):
         from .game_detector import detect_game_title_from_video
         timestamp_fmt = format_timestamp(start_sec)
         
@@ -822,7 +825,8 @@ class VideoScanner:
         db.add_log(f"🚽 TALÁLAT! Budi Check: [{display_game}] @ {timestamp_fmt}! ({rating}/10 pont, '{kw}')", "match")
         db.add_log(f"📸 Képernyőkép kinyerése és budi-felismerés ({timestamp_fmt})...", "snapshot")
         
-        screenshot_url = capture_screenshot(video_id, start_sec)
+        shot_sec = visual_sec if (visual_sec is not None and visual_sec > 0) else start_sec
+        screenshot_url = capture_screenshot(video_id, shot_sec)
 
         check_entry = {
             "id": f"{video_id}_{int(start_sec)}",
@@ -832,6 +836,7 @@ class VideoScanner:
             "video_url": f"https://www.youtube.com/watch?v={video_id}",
             "timestamp_sec": start_sec,
             "timestamp_formatted": timestamp_fmt,
+            "verdict_sec": verdict_sec,
             "yt_timestamp_url": f"https://www.youtube.com/watch?v={video_id}&t={int(start_sec)}s",
             "quote": quote,
             "rating": rating,
@@ -939,7 +944,9 @@ class VideoScanner:
                         r_val = float(m.get("rating", 7.0))
                         q_txt = str(m.get("quote", ""))
                         kw_val = str(m.get("matched_keyword", "budi check"))
-                        self._save_budi_check_entry(v_id, v_title, s_sec, r_val, q_txt, kw_val, game_title=game_title)
+                        v_sec = float(m["verdict_sec"]) if m.get("verdict_sec") is not None else None
+                        vis_sec = float(m["start_sec"]) if (m.get("start_sec") is not None and m.get("quote_sec") is not None) else None
+                        self._save_budi_check_entry(v_id, v_title, s_sec, r_val, q_txt, kw_val, game_title=game_title, verdict_sec=v_sec, visual_sec=vis_sec)
                     processed_with_gemini = True
                     is_fully_processed = True
             except Exception as e_gem:
@@ -960,7 +967,9 @@ class VideoScanner:
                                 r_val = float(m.get("rating", 7.0))
                                 q_txt = str(m.get("quote", ""))
                                 kw_val = str(m.get("matched_keyword", "budi check"))
-                                self._save_budi_check_entry(v_id, v_title, s_sec, r_val, q_txt, kw_val, game_title=game_title)
+                                v_sec = float(m["verdict_sec"]) if m.get("verdict_sec") is not None else None
+                                vis_sec = float(m["start_sec"]) if (m.get("start_sec") is not None and m.get("quote_sec") is not None) else None
+                                self._save_budi_check_entry(v_id, v_title, s_sec, r_val, q_txt, kw_val, game_title=game_title, verdict_sec=v_sec, visual_sec=vis_sec)
                             processed_with_gemini = True
                             is_fully_processed = True
                             break
@@ -1164,13 +1173,16 @@ class VideoScanner:
             start_sec = match['start_sec']
             kw = match['kw']
 
-            quote_start = max(0, idx - 5)
-            quote_end = min(len(transcript), idx + 12)
+            quote_start = max(0, idx - 3)
+            quote_end = min(len(transcript), idx + 8)
             quote_lines = [transcript[i].get('text', '') for i in range(quote_start, quote_end)]
             quote_text = " ... ".join(quote_lines)
 
+            # Ensure the timestamp is the exact moment Jani begins saying the quote
+            quote_speech_sec = transcript[quote_start].get('start', start_sec)
+
             rating = extract_rating_from_text(quote_text)
-            self._save_budi_check_entry(video_id, video_title, start_sec, rating, quote_text, kw, game_title=game_title)
+            self._save_budi_check_entry(video_id, video_title, quote_speech_sec, rating, quote_text, kw, game_title=game_title)
 
 scanner = VideoScanner()
 

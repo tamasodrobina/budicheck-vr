@@ -5,7 +5,8 @@ import { getScoreBadgeClass } from './BudiCard';
 export default function VideoModal({ item, onClose, onEdit, onDelete, onReport }) {
   if (!item) return null;
 
-  const [viewMode, setViewMode] = useState('image'); // Default to toilet snapshot photo view
+  // If the screenshot has a warning or is flagged, default directly to video so the user hears/sees Jani right away!
+  const [viewMode, setViewMode] = useState(item.audit_status === 'warning' ? 'video' : 'image');
   const rating = item.rating || 0;
   const badgeClass = getScoreBadgeClass(rating);
 
