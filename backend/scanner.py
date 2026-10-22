@@ -349,19 +349,24 @@ def capture_screenshot(video_id: str, timestamp_sec: float, force: bool = False)
     return None
 
 def parse_timestamp_str(ts_str: str) -> float:
-    ts_str = str(ts_str).strip()
     if not ts_str:
         return 0.0
-    parts = ts_str.split(":")
-    if len(parts) == 3:
-        return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
-    elif len(parts) == 2:
-        return float(parts[0]) * 60 + float(parts[1])
-    else:
-        try:
-            return float(ts_str)
-        except ValueError:
+    ts_str = str(ts_str).strip().lower()
+    ts_str = ts_str.replace("másodperc", "").replace("perc", ":").replace("óra", ":")
+    ts_str = ts_str.replace("mp", "").replace("sec", "").replace("s", "").replace("p", ":").replace("m", ":").replace("ó", ":").replace("h", ":")
+    ts_str = ts_str.replace(" ", "")
+    parts = [p for p in ts_str.split(":") if p != ""]
+    try:
+        if len(parts) == 3:
+            return float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2])
+        elif len(parts) == 2:
+            return float(parts[0]) * 60 + float(parts[1])
+        elif len(parts) == 1:
+            return float(parts[0])
+        else:
             return 0.0
+    except (ValueError, TypeError):
+        return 0.0
 
 def find_quote_timestamp_in_subtitles(video_id: str, quote: str) -> Optional[float]:
     """Search YouTube Hungarian auto-generated subtitles for exact moment a quote was spoken."""

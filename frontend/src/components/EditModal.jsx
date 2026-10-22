@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 
 export default function EditModal({ item, onSave, onClose }) {
   if (!item) return null;
@@ -12,6 +12,8 @@ export default function EditModal({ item, onSave, onClose }) {
   const [syncingTime, setSyncingTime] = useState(false);
   const [syncingGame, setSyncingGame] = useState(false);
   const [resnapshotting, setResnapshotting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
 
   const handleResnapshot = async (offsetSec = 0) => {
@@ -126,9 +128,17 @@ export default function EditModal({ item, onSave, onClose }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave(item.id, parseFloat(rating), quote, gameTitle, timestamp);
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(item.id, parseFloat(rating), quote, gameTitle, timestamp);
+    } catch (err) {
+      setSaveError(err.message || 'Nem sikerült elmenteni a módosításokat.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -368,13 +378,37 @@ export default function EditModal({ item, onSave, onClose }) {
             />
           </div>
 
+          {saveError && (
+            <div style={{
+              marginTop: '1rem',
+              marginBottom: '0.5rem',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              background: 'rgba(255, 77, 109, 0.15)',
+              border: '1px solid rgba(255, 77, 109, 0.4)',
+              color: '#ff758f',
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+              <span>{saveError}</span>
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.8rem', marginTop: '1.5rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSaving}>
               Mégse
             </button>
-            <button type="submit" className="btn btn-primary">
-              <Save size={16} />
-              <span>Mentés</span>
+            <button 
+              type="submit" 
+              className="btn btn-primary"
+              disabled={isSaving || resnapshotting || syncingTime || syncingGame}
+              style={{ minWidth: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              {isSaving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+              <span>{isSaving ? 'Mentés...' : 'Mentés'}</span>
             </button>
           </div>
         </form>

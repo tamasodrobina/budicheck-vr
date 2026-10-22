@@ -39,6 +39,7 @@ record_demo.js
 .env
 config.json
 */config.json
+data/admin_tokens.json
 *cookie*.txt
 *.cookies
 cookies.txt

@@ -165,22 +165,66 @@ export default function App() {
   }, [status.status, minRating, preset, search, sortBy]);
 
   const handleDelete = async (checkId) => {
-    const token = localStorage.getItem('budicheck_admin_token') || '';
-    if (!token) return;
+    let token = localStorage.getItem('budicheck_admin_token') || '';
+    if (!token) {
+      const pass = window.prompt('Adminisztrátori jelszó szükséges a törléshez:');
+      if (!pass) return;
+      try {
+        const loginRes = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass })
+        });
+        if (!loginRes.ok) {
+          alert('Helytelen admin jelszó!');
+          return;
+        }
+        const d = await loginRes.json();
+        token = d.token;
+        localStorage.setItem('budicheck_admin_token', token);
+        setHasAdminSession(true);
+      } catch {
+        alert('Hálózati hiba a bejelentkezéskor.');
+        return;
+      }
+    }
     if (window.confirm('Biztosan törölni szeretnéd ezt a WC értékelést?')) {
-      await fetch(`/api/checks/${checkId}`, {
+      const res = await fetch(`/api/checks/${checkId}`, {
         method: 'DELETE',
         headers: { 'x-admin-token': token }
       });
-      fetchChecks();
-      fetchStatus();
+      if (res.ok) {
+        fetchChecks();
+        fetchStatus();
+      } else {
+        alert('Nem sikerült törölni a bejegyzést (érvénytelen admin munkamenet).');
+      }
     }
   };
 
   const handleSaveEdit = async (checkId, rating, quote, gameTitle, timestamp) => {
-    const token = localStorage.getItem('budicheck_admin_token') || '';
-    if (!token) return;
-    await fetch(`/api/checks/${checkId}`, {
+    let token = localStorage.getItem('budicheck_admin_token') || '';
+    if (!token) {
+      const pass = window.prompt('Adminisztrátori jelszó szükséges a módosítás mentéséhez:');
+      if (!pass) {
+        throw new Error('Admin hitelesítés nélkül a módosítás nem menthető!');
+      }
+      const loginRes = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pass })
+      });
+      if (!loginRes.ok) {
+        const d = await loginRes.json().catch(() => ({}));
+        throw new Error(d.detail || 'Helytelen admin jelszó!');
+      }
+      const d = await loginRes.json();
+      token = d.token;
+      localStorage.setItem('budicheck_admin_token', token);
+      setHasAdminSession(true);
+    }
+
+    const res = await fetch(`/api/checks/${checkId}`, {
       method: 'PUT',
       headers: { 
         'Content-Type': 'application/json',
@@ -188,9 +232,41 @@ export default function App() {
       },
       body: JSON.stringify({ rating, quote, game_title: gameTitle, timestamp })
     });
+
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem('budicheck_admin_token');
+        setHasAdminSession(false);
+        const pass = window.prompt('Az admin munkamenet lejárt! Kérlek add meg a jelszót újra:');
+        if (pass) {
+          const loginRes = await fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pass })
+          });
+          if (loginRes.ok) {
+            const d = await loginRes.json();
+            localStorage.setItem('budicheck_admin_token', d.token);
+            setHasAdminSession(true);
+            return handleSaveEdit(checkId, rating, quote, gameTitle, timestamp);
+          }
+        }
+        throw new Error('Lejárt vagy érvénytelen admin munkamenet.');
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || 'Hiba történt a mentés során a szerveren.');
+    }
+
+    const resData = await res.json().catch(() => ({}));
+    if (resData.item) {
+      setItems(prev => prev.map(c => c.id === checkId ? { ...c, ...resData.item } : c));
+      window.dispatchEvent(new CustomEvent('budicheck_item_updated', { detail: resData.item }));
+    }
+
     setEditingItem(null);
     fetchChecks();
     fetchStatus();
+    return resData;
   };
 
   return (

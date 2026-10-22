@@ -28,7 +28,27 @@ DEFAULT_CONFIG = {
     "admin_password_hash": DEFAULT_PASSWORD_HASH
 }
 
-_active_admin_tokens = set()
+TOKENS_PATH = BASE_DIR / "data" / "admin_tokens.json"
+
+def _load_tokens() -> set:
+    if TOKENS_PATH.exists():
+        try:
+            with open(TOKENS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data) if isinstance(data, list) else set()
+        except Exception:
+            pass
+    return set()
+
+def _save_tokens():
+    try:
+        TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(TOKENS_PATH, "w", encoding="utf-8") as f:
+            json.dump(list(_active_admin_tokens), f)
+    except Exception:
+        pass
+
+_active_admin_tokens = _load_tokens()
 
 def verify_admin_password(password: str) -> bool:
     # 1. Environment variable support (highest priority, persistent on cloud like Render)
@@ -51,6 +71,7 @@ def change_admin_password(new_password: str) -> bool:
 def create_admin_token() -> str:
     token = secrets.token_hex(24)
     _active_admin_tokens.add(token)
+    _save_tokens()
     return token
 
 def verify_admin_token(token: str) -> bool:
@@ -61,6 +82,7 @@ def verify_admin_token(token: str) -> bool:
 def revoke_admin_token(token: str):
     if token in _active_admin_tokens:
         _active_admin_tokens.remove(token)
+        _save_tokens()
 
 def load_config() -> dict:
     config = DEFAULT_CONFIG.copy()

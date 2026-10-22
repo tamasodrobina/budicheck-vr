@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends, Request
@@ -301,10 +302,28 @@ def update_check(check_id: str, data: UpdateCheckModel, admin: bool = Depends(re
     new_shot = None
     if data.timestamp and data.timestamp.strip():
         parsed_sec = parse_timestamp_str(data.timestamp)
-        if abs(parsed_sec - target.get("timestamp_sec", 0)) > 1.0:
-            new_sec = parsed_sec
-            new_fmt = format_timestamp(new_sec)
-            new_shot = capture_screenshot(target["video_id"], new_sec)
+        new_sec = parsed_sec
+        new_fmt = format_timestamp(new_sec)
+
+        # Check if the screenshot already exists on disk
+        shot_candidate = os.path.join(SCREENSHOTS_DIR, f"{target['video_id']}_{int(new_sec)}.jpg")
+        if os.path.exists(shot_candidate) and os.path.getsize(shot_candidate) > 1000:
+            new_shot = f"/screenshots/{target['video_id']}_{int(new_sec)}.jpg"
+        elif abs(parsed_sec - target.get("timestamp_sec", 0)) > 2.0:
+            # Capture screenshot in background thread so PUT responds in 10ms without freezing
+            def _bg_capture(vid, sec, cid, cur_rating, cur_quote):
+                try:
+                    s_url = capture_screenshot(vid, sec)
+                    if s_url:
+                        db.update_budi_check(cid, rating=cur_rating, quote=cur_quote, screenshot_url=s_url)
+                except Exception as err:
+                    print(f"Background capture error: {err}")
+
+            threading.Thread(
+                target=_bg_capture,
+                args=(target["video_id"], new_sec, check_id, data.rating, data.quote),
+                daemon=True
+            ).start()
 
     success = db.update_budi_check(
         check_id=check_id,
@@ -318,7 +337,9 @@ def update_check(check_id: str, data: UpdateCheckModel, admin: bool = Depends(re
     )
     if not success:
         raise HTTPException(status_code=404, detail="Budi check record not found")
-    return {"message": "Updated successfully"}
+
+    updated_item = next((c for c in db.get_checks() if c["id"] == check_id), target)
+    return {"message": "Updated successfully", "item": updated_item}
 
 @app.delete("/api/checks/{check_id}")
 def delete_check(check_id: str, admin: bool = Depends(require_admin)):
