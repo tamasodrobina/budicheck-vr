@@ -24,8 +24,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"Szerver fut a következő címen: http://{host}:{port}")
     
-    # Open browser automatically when running locally on desktop
-    if not is_cloud:
+    # Open browser automatically when running locally on desktop unless disabled
+    if not is_cloud and not os.environ.get("NO_BROWSER"):
         threading.Thread(target=open_browser, daemon=True).start()
 
     # Run FastAPI app
