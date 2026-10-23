@@ -6,8 +6,33 @@ import {
 } from 'lucide-react';
 import { getScoreBadgeClass } from './BudiCard';
 
-export default function BudiGame({ onPlayItem }) {
-  const [isOpen, setIsOpen] = useState(false);
+export default function BudiGame({ onPlayItem, isOpen: controlledIsOpen, onToggleOpen }) {
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+  const setIsOpen = (val) => {
+    if (onToggleOpen) {
+      if (typeof val === 'function') {
+        onToggleOpen(val(isOpen));
+      } else {
+        onToggleOpen(val);
+      }
+    } else {
+      setInternalIsOpen(val);
+    }
+  };
+
+  useEffect(() => {
+    const handleOpenEvent = () => {
+      setIsOpen(true);
+      setTimeout(() => {
+        const el = document.getElementById('budi-quiz-section');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    };
+    window.addEventListener('open-budi-quiz', handleOpenEvent);
+    return () => window.removeEventListener('open-budi-quiz', handleOpenEvent);
+  }, []);
+
   const [loading, setLoading] = useState(false);
   const [item, setItem] = useState(null);
   const [userRating, setUserRating] = useState('7.0');
@@ -135,15 +160,19 @@ export default function BudiGame({ onPlayItem }) {
   };
 
   return (
-    <div style={{
-      marginBottom: '2rem',
-      borderRadius: '16px',
-      overflow: 'hidden',
-      border: isOpen ? '1px solid var(--accent-gold)' : '1px solid #1f283d',
-      background: '#0f131f',
-      boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)',
-      transition: 'all 0.3s'
-    }}>
+    <div 
+      id="budi-quiz-section"
+      className="quiz-section quiz-banner"
+      style={{
+        marginBottom: '2rem',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        border: isOpen ? '1px solid var(--accent-gold)' : '1px solid #1f283d',
+        background: '#0f131f',
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)',
+        transition: 'all 0.3s'
+      }}
+    >
       {/* BANNER HEADER */}
       <div 
         className="quiz-banner-header"

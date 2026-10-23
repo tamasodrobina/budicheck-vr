@@ -81,7 +81,7 @@ export const TIERS = [
   }
 ];
 
-export default function TierListView({ checks, onSelectCheck, isCommunityMode = false }) {
+export default function TierListView({ checks, onSelectCheck, isCommunityMode = false, onReport, onOpenQuiz }) {
   const getChecksForTier = (tier) => {
     return checks.filter((c) => {
       const r = isCommunityMode 
@@ -188,8 +188,13 @@ export default function TierListView({ checks, onSelectCheck, isCommunityMode = 
               type="button"
               className="btn btn-secondary"
               onClick={() => {
-                const el = document.querySelector('.quiz-section') || document.querySelector('.quiz-banner') || document.querySelector('.header');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                if (onOpenQuiz) {
+                  onOpenQuiz();
+                } else {
+                  window.dispatchEvent(new CustomEvent('open-budi-quiz'));
+                  const el = document.getElementById('budi-quiz-section') || document.querySelector('.quiz-section');
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
               }}
               style={{
                 fontSize: '0.78rem',

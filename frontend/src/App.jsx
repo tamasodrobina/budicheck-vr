@@ -43,6 +43,17 @@ export default function App() {
   const [editingItem, setEditingItem] = useState(null);
   const [reportingItem, setReportingItem] = useState(null);
   const [reportingGeneral, setReportingGeneral] = useState(false);
+  const [isQuizOpen, setIsQuizOpen] = useState(false);
+
+  const handleOpenQuiz = () => {
+    setIsQuizOpen(true);
+    setTimeout(() => {
+      const el = document.getElementById('budi-quiz-section');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
+  };
 
   // Admin session reactive state
   const [hasAdminSession, setHasAdminSession] = useState(() => {
@@ -293,7 +304,11 @@ export default function App() {
       ) : (
         <main className="container" style={{ marginTop: '1.5rem', marginBottom: '4rem' }}>
           {/* COMMUNITY QUIZ & MINIGAME BANNER */}
-          <BudiGame onPlayItem={setPlayingItem} />
+          <BudiGame 
+            onPlayItem={setPlayingItem} 
+            isOpen={isQuizOpen}
+            onToggleOpen={(val) => setIsQuizOpen(val !== undefined ? val : !isQuizOpen)}
+          />
 
           {/* FILTER AND CONTROLS BAR */}
           <FilterBar
@@ -323,6 +338,7 @@ export default function App() {
                 onSelectCheck={setPlayingItem}
                 isCommunityMode={viewMode === 'community_tierlist'}
                 onReport={setReportingItem}
+                onOpenQuiz={handleOpenQuiz}
               />
             ) : viewMode === 'grid' ? (
               <div className="budi-grid">
