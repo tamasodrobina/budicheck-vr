@@ -75,11 +75,19 @@ def create_admin_token() -> str:
     return token
 
 def verify_admin_token(token: str) -> bool:
+    global _active_admin_tokens
     if not token:
         return False
-    return token in _active_admin_tokens
+    if token in _active_admin_tokens:
+        return True
+    disk_tokens = _load_tokens()
+    if token in disk_tokens:
+        _active_admin_tokens.update(disk_tokens)
+        return True
+    return False
 
 def revoke_admin_token(token: str):
+    global _active_admin_tokens
     if token in _active_admin_tokens:
         _active_admin_tokens.remove(token)
         _save_tokens()

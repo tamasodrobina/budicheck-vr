@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight, AlertTriangle, Image as ImageIcon, Video as VideoIcon, ExternalLink } from 'lucide-react';
+import { X, Save, Clock, Target, Loader2, Camera, ChevronLeft, ChevronRight, AlertTriangle, Image as ImageIcon, Video as VideoIcon, ExternalLink, RefreshCw } from 'lucide-react';
 
 export default function EditModal({ item, onSave, onClose }) {
   if (!item) return null;
@@ -13,6 +13,7 @@ export default function EditModal({ item, onSave, onClose }) {
   const [syncingTime, setSyncingTime] = useState(false);
   const [syncingGame, setSyncingGame] = useState(false);
   const [resnapshotting, setResnapshotting] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
@@ -135,6 +136,47 @@ export default function EditModal({ item, onSave, onClose }) {
       setSyncMsg({ type: 'error', text: 'Hálózati hiba a szinkronizálás közben.' });
     } finally {
       setSyncingTime(false);
+    }
+  };
+
+  const handleRescanGame = async () => {
+    if (!window.confirm(`Biztosan újra szeretnéd elemezni a(z) '${gameTitle}' játék videóját az AI-val? Ez újraelemzi a hanganyagot, megkeresi a budi pillanatot és frissíti a pontszámot!`)) {
+      return;
+    }
+    setRescanning(true);
+    setSyncMsg(null);
+    try {
+      const token = localStorage.getItem('budicheck_admin_token') || '';
+      const res = await fetch(`/api/checks/${item.id}/rescan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.item) {
+        const up = data.item;
+        if (up.rating !== undefined) setRating(up.rating);
+        if (up.quote) setQuote(up.quote);
+        if (up.game_title) setGameTitle(up.game_title);
+        if (up.timestamp_formatted) setTimestamp(up.timestamp_formatted);
+        if (up.screenshot_url) setScreenshotUrl(`${up.screenshot_url}?t=${Date.now()}`);
+        setSyncMsg({
+          type: 'success',
+          text: `🎉 Siker! A játék videója teljesen újra lett elemezve: ${up.game_title} (${up.rating}/10 pont, ${up.timestamp_formatted})`
+        });
+        window.dispatchEvent(new CustomEvent('budicheck_item_updated', { detail: up }));
+      } else {
+        setSyncMsg({
+          type: 'error',
+          text: data.detail || 'Nem sikerült az újraelemzés.'
+        });
+      }
+    } catch (e) {
+      setSyncMsg({ type: 'error', text: 'Hálózati hiba a játék újraelemzésekor.' });
+    } finally {
+      setRescanning(false);
     }
   };
 
@@ -310,25 +352,47 @@ export default function EditModal({ item, onSave, onClose }) {
           <div className="form-group">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '6px' }}>
               <label className="form-label" style={{ margin: 0 }}>🎮 Játék Neve</label>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={handleSyncGameTitle}
-                disabled={syncingGame}
-                style={{
-                  fontSize: '0.78rem',
-                  padding: '3px 8px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  color: 'var(--accent-cyan)',
-                  borderColor: 'rgba(0, 242, 254, 0.4)'
-                }}
-                title="A videó YouTube fejezetei/timestamps alapján automatikusan megállapítja az adott pillanatban játszott játékot"
-              >
-                {syncingGame ? <Loader2 size={13} className="spin" /> : <Target size={13} />}
-                <span>{syncingGame ? 'Keresés...' : '🎯 Játék lekérése fejezetből'}</span>
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleRescanGame}
+                  disabled={rescanning || syncingGame || isSaving}
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: 'var(--accent-purple)',
+                    borderColor: 'rgba(168, 85, 247, 0.4)',
+                    background: 'rgba(168, 85, 247, 0.08)'
+                  }}
+                  title="A teljes videó újraelemzése az AI-val a YouTube-ról: felülvizsgálja az idézetet, a pontszámot és az időbélyeget"
+                >
+                  {rescanning ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
+                  <span>{rescanning ? 'Újraelemzés...' : '🔄 Teljes Újraelemzés'}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleSyncGameTitle}
+                  disabled={syncingGame || rescanning}
+                  style={{
+                    fontSize: '0.78rem',
+                    padding: '3px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    color: 'var(--accent-cyan)',
+                    borderColor: 'rgba(0, 242, 254, 0.4)'
+                  }}
+                  title="A videó YouTube fejezetei/timestamps alapján automatikusan megállapítja az adott pillanatban játszott játékot"
+                >
+                  {syncingGame ? <Loader2 size={13} className="spin" /> : <Target size={13} />}
+                  <span>{syncingGame ? 'Keresés...' : '🎯 Játék fejezetből'}</span>
+                </button>
+              </div>
             </div>
             <input
               className="form-input"
@@ -463,9 +527,34 @@ export default function EditModal({ item, onSave, onClose }) {
           </div>
 
           <div className="form-group">
-            <label className="form-label">
-              Pontszám (0.0 - 10.0 Skálán): <strong style={{ color: 'var(--accent-cyan)', fontSize: '1.1rem' }}>{parseFloat(rating).toFixed(1)}</strong>
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+              <label className="form-label" style={{ margin: 0 }}>
+                Pontszám (0.0 - 10.0 Skálán):
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="0.5"
+                  value={rating}
+                  onChange={(e) => setRating(e.target.value)}
+                  style={{
+                    width: '64px',
+                    padding: '3px 8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid rgba(0, 242, 254, 0.4)',
+                    borderRadius: '6px',
+                    color: 'var(--accent-cyan)',
+                    fontSize: '1rem',
+                    fontWeight: 800,
+                    textAlign: 'center',
+                    fontFamily: 'monospace'
+                  }}
+                />
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-dim)', fontWeight: 600 }}>/ 10</span>
+              </div>
+            </div>
             <input
               type="range"
               min="0"

@@ -492,6 +492,51 @@ def resnapshot_check(check_id: str, data: Optional[ResnapshotModel] = Body(None)
         "item": target
     }
 
+@app.post("/api/checks/{check_id}/rescan")
+def rescan_check(check_id: str, admin: bool = Depends(require_admin)):
+    checks = db.get_checks()
+    target = next((c for c in checks if c["id"] == check_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Budi check record not found")
+
+    video_id = target.get("video_id")
+    if not video_id:
+        raise HTTPException(status_code=400, detail="Hiányzó videó azonosító")
+
+    v_title = target.get("video_title") or f"Videó ({video_id})"
+    db.add_log(f"🔄 [Játék Újraellenőrzése]: '{target.get('game_title') or v_title}' (ID: {video_id}) teljes AI újraelemzése indul...", "info")
+
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from .scanner import get_ydl_opts
+    import yt_dlp
+
+    v_dur = 0.0
+    try:
+        ydl_opts = get_ydl_opts({'quiet': True, 'skip_download': True})
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if info:
+                v_title = info.get('title', v_title)
+                v_dur = float(info.get('duration') or 0.0)
+    except Exception:
+        pass
+
+    api = YouTubeTranscriptApi()
+    scanner._process_single_video({'id': video_id, 'title': v_title, 'duration': v_dur}, 0, 1, api, force=True)
+
+    updated_checks = db.get_checks()
+    updated_item = next((c for c in updated_checks if c["id"] == check_id), None)
+    if not updated_item:
+        updated_item = next((c for c in updated_checks if c.get("video_id") == video_id), target)
+
+    db.add_log(f"🎉 [Játék Újraellenőrzése Kész]: '{updated_item.get('game_title')}' ({updated_item.get('rating')}/10 pont, {updated_item.get('timestamp_formatted')})!", "success")
+
+    return {
+        "success": True,
+        "message": f"'{updated_item.get('game_title')}' sikeresen újraelemezve! Új pontszám: {updated_item.get('rating')}/10, Idő: {updated_item.get('timestamp_formatted')}",
+        "item": updated_item
+    }
+
 @app.post("/api/checks/{check_id}/sync-timestamp")
 def sync_check_timestamp(check_id: str, admin: bool = Depends(require_admin)):
     checks = db.get_checks()

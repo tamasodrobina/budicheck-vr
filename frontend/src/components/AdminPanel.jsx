@@ -43,6 +43,7 @@ export default function AdminPanel({
   const [runningBatchAudit, setRunningBatchAudit] = useState(false);
   const [auditingCheckId, setAuditingCheckId] = useState(null);
   const [syncingCheckId, setSyncingCheckId] = useState(null);
+  const [rescanningCheckId, setRescanningCheckId] = useState(null);
 
   // Reports management
   const [reportsList, setReportsList] = useState([]);
@@ -84,6 +85,17 @@ export default function AdminPanel({
   useEffect(() => {
     checkAuth(token);
   }, [token]);
+
+  // Real-time sync with item edits from EditModal or rescans
+  useEffect(() => {
+    const handleItemUpdated = (e) => {
+      if (e.detail && e.detail.id) {
+        setChecksList(prev => prev.map(c => c.id === e.detail.id ? { ...c, ...e.detail } : c));
+      }
+    };
+    window.addEventListener('budicheck_item_updated', handleItemUpdated);
+    return () => window.removeEventListener('budicheck_item_updated', handleItemUpdated);
+  }, []);
 
   const checkAuth = async (testToken) => {
     if (!testToken) {
@@ -333,6 +345,38 @@ export default function AdminPanel({
       alert('Hálózati hiba az időpont szinkronizálásakor.');
     } finally {
       setSyncingCheckId(null);
+    }
+  };
+
+  const handleRescanSingleCheck = async (checkId) => {
+    const targetItem = checksList.find(c => c.id === checkId);
+    const gameName = targetItem?.game_title || targetItem?.video_title || 'a játék';
+    if (!window.confirm(`Biztosan teljesen újra szeretnéd elemezni a(z) '${gameName}' videóját az AI-val? Ez újra letölti és átvizsgálja a hanganyagot, frissíti az időbélyeget, idézetet, képet és pontszámot!`)) {
+      return;
+    }
+    setRescanningCheckId(checkId);
+    try {
+      const res = await fetch(`/api/checks/${checkId}/rescan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': token
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.item) {
+        setChecksList(prev => prev.map(c => c.id === checkId ? data.item : c));
+        window.dispatchEvent(new CustomEvent('budicheck_item_updated', { detail: data.item }));
+        onRefreshChecks();
+        onRefreshStatus();
+        alert(`🎉 Sikeres újraelemzés!\nJáték: ${data.item.game_title}\nPontszám: ${data.item.rating}/10\nIdőpont: ${data.item.timestamp_formatted}`);
+      } else {
+        alert(data.detail || 'Nem sikerült az újraelemzés.');
+      }
+    } catch (e) {
+      alert('Hálózati hiba a játék újraelemzésekor.');
+    } finally {
+      setRescanningCheckId(null);
     }
   };
 
@@ -1202,6 +1246,17 @@ export default function AdminPanel({
                     >
                       <Target size={13} className={syncingCheckId === item.id ? 'spin' : ''} />
                       <span>{syncingCheckId === item.id ? 'Szinkron...' : '🎯 Idő Szinkron'}</span>
+                    </button>
+
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem', borderColor: '#a855f7', color: '#c084fc' }}
+                      onClick={() => handleRescanSingleCheck(item.id)}
+                      disabled={rescanningCheckId === item.id}
+                      title="A játék videójának teljes újrafeldolgozása az AI-val (hang, kép, idézet és pontszám újraértékelése)"
+                    >
+                      <RefreshCw size={13} className={rescanningCheckId === item.id ? 'spin' : ''} />
+                      <span>{rescanningCheckId === item.id ? 'Elemzés...' : '🔄 Újraelemzés'}</span>
                     </button>
 
                     <button

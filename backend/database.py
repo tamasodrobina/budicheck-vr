@@ -229,7 +229,9 @@ class Database:
         with self.lock:
             for c in self.budi_checks:
                 if c["id"] == check_id:
-                    c["rating"] = rating
+                    c["rating"] = round(float(rating), 1)
+                    if "corrected_rating" in c:
+                        c["corrected_rating"] = round(float(rating), 1)
                     c["quote"] = quote
                     if game_title is not None:
                         c["game_title"] = game_title.strip()
