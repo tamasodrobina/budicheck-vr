@@ -96,6 +96,9 @@ export default function TierListView({ checks, onSelectCheck, isCommunityMode = 
     ? checks.filter((c) => !c.user_votes_count || c.user_votes_count === 0)
     : [];
 
+  const totalCommunityVotes = checks.reduce((sum, c) => sum + (c.user_votes_count || 0), 0);
+  const votedChecksCount = checks.filter((c) => (c.user_votes_count || 0) > 0).length;
+
   return (
     <div className="tierlist-container" style={{ margin: '1.5rem 0' }}>
       {/* Tierlist Header Info */}
@@ -120,6 +123,92 @@ export default function TierListView({ checks, onSelectCheck, isCommunityMode = 
           Kattints bármelyik budira a videójelenet és a részletes idézet megnyitásához!
         </span>
       </div>
+
+      {/* Community Stats Banner when in Community Mode */}
+      {isCommunityMode && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.85rem',
+          background: 'linear-gradient(135deg, rgba(157, 78, 221, 0.18) 0%, rgba(90, 24, 154, 0.12) 100%)',
+          border: '1px solid rgba(157, 78, 221, 0.35)',
+          borderRadius: '11px',
+          padding: '0.8rem 1.2rem',
+          marginBottom: '1rem',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 24px rgba(157, 78, 221, 0.12)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+              <div style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '9px',
+                background: 'rgba(157, 78, 221, 0.28)',
+                border: '1px solid rgba(216, 180, 254, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#d8b4fe',
+                flexShrink: 0
+              }}>
+                <Users size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.68rem', color: '#c084fc', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.04em' }}>
+                  Összes Leadott Szavazat
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>
+                  {totalCommunityVotes}{' '}
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)' }}>voks a közösségtől</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ borderLeft: '1px solid rgba(255, 255, 255, 0.12)', paddingLeft: '1.25rem' }}>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.04em' }}>
+                Értékelt Budik Aránya
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>
+                {votedChecksCount}{' '}
+                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)' }}>
+                  / {checks.length} db ({Math.round((votedChecksCount / (checks.length || 1)) * 100)}%)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem', color: '#ffd166', fontWeight: 600 }}>
+              🎮 Befolyásold te is a rangsort!
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                const el = document.querySelector('.quiz-section') || document.querySelector('.quiz-banner') || document.querySelector('.header');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{
+                fontSize: '0.78rem',
+                padding: '0.4rem 0.85rem',
+                background: 'rgba(255, 183, 3, 0.15)',
+                borderColor: 'rgba(255, 183, 3, 0.45)',
+                color: 'var(--accent-gold)',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <span>Ugrás a Kvízhez</span>
+              <span>⬆️</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Tierlist Frame matching the layout */}
       <div
@@ -265,10 +354,11 @@ export default function TierListView({ checks, onSelectCheck, isCommunityMode = 
                                   color: '#fff',
                                   boxShadow: '0 2px 6px rgba(0,0,0,0.5)'
                                 }}
-                                title={`Közösség értékelése: ${item.user_votes_avg?.toFixed(1)}/10 (${item.user_votes_count} szavazat)`}
+                                title={`Közösség értékelése: ${item.user_votes_avg?.toFixed(1)}/10 (${item.user_votes_count} ember szavazata alapján)`}
                               >
                                 <Users size={10} />
                                 <span>{item.user_votes_avg?.toFixed(1)}</span>
+                                <span style={{ fontSize: '0.62rem', opacity: 0.85, fontWeight: 600 }}>({item.user_votes_count})</span>
                               </div>
                               {/* Secondary: Jani */}
                               <div
@@ -323,10 +413,11 @@ export default function TierListView({ checks, onSelectCheck, isCommunityMode = 
                                     fontWeight: 800,
                                     color: '#fff'
                                   }}
-                                  title={`Közösségi átlag: ${item.user_votes_avg?.toFixed(1)}/10 (${item.user_votes_count} szavazat)`}
+                                  title={`Közösségi átlag: ${item.user_votes_avg?.toFixed(1)}/10 (${item.user_votes_count} ember szavazata alapján)`}
                                 >
                                   <Users size={9} />
                                   <span>{item.user_votes_avg?.toFixed(1)}</span>
+                                  <span style={{ fontSize: '0.58rem', opacity: 0.85 }}>({item.user_votes_count})</span>
                                 </div>
                               ) : null}
                             </>

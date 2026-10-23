@@ -59,7 +59,7 @@ export default function BudiTable({ items, onPlay, onEdit, onDelete, onReport })
                         gap: '4px'
                       }} title={`Közösségi átlag: ${item.user_votes_avg} (${item.user_votes_count} szavazat)`}>
                         <Users size={11} />
-                        <span>{item.user_votes_avg?.toFixed(1)} / 10</span>
+                        <span>{item.user_votes_avg?.toFixed(1)} / 10 ({item.user_votes_count} szavazat)</span>
                       </span>
                     ) : (
                       <span style={{

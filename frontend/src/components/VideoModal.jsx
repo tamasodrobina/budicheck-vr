@@ -172,8 +172,13 @@ export default function VideoModal({ item, onClose, onEdit, onDelete, onReport }
                   👥 Közösség értékelése
                 </div>
                 {item.user_votes_count > 0 ? (
-                  <div style={{ fontSize: '1.55rem', fontWeight: 900, color: '#d8b4fe', marginTop: '2px' }}>
-                    {item.user_votes_avg?.toFixed(1)} <span style={{ fontSize: '0.88rem', color: 'var(--text-dim)', fontWeight: 600 }}>/ 10 <span style={{ fontSize: '0.75rem' }}>({item.user_votes_count})</span></span>
+                  <div>
+                    <div style={{ fontSize: '1.55rem', fontWeight: 900, color: '#d8b4fe', marginTop: '2px', lineHeight: 1.1 }}>
+                      {item.user_votes_avg?.toFixed(1)} <span style={{ fontSize: '0.88rem', color: 'var(--text-dim)', fontWeight: 600 }}>/ 10</span>
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: '#c084fc', fontWeight: 600, marginTop: '2px' }}>
+                      {item.user_votes_count} ember szavazata alapján
+                    </div>
                   </div>
                 ) : (
                   <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-dim)', marginTop: '6px' }}>

@@ -165,8 +165,13 @@ export default function BudiCard({ item, onPlay, onEdit, onDelete, onReport }) {
               👥 Közösség értékelése
             </div>
             {item.user_votes_count > 0 ? (
-              <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#d8b4fe', marginTop: '2px' }}>
-                {item.user_votes_avg?.toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontWeight: 600 }}>/ 10</span>
+              <div>
+                <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#d8b4fe', marginTop: '2px' }}>
+                  {item.user_votes_avg?.toFixed(1)} <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontWeight: 600 }}>/ 10</span>
+                </div>
+                <div style={{ fontSize: '0.73rem', color: '#c084fc', fontWeight: 600, marginTop: '2px' }}>
+                  {item.user_votes_count} ember szavazata alapján
+                </div>
               </div>
             ) : (
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', marginTop: '6px' }}>
