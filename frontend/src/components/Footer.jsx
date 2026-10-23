@@ -140,7 +140,11 @@ export default function Footer({ status, checksCount, onOpenGeneralReport }) {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.83rem' }}>
                 <span>Eddig átnézve / feldolgozva:</span>
-                <strong style={{ color: 'var(--accent-cyan)' }}>{processedVideos} videó ({percentProcessed}%)</strong>
+                <strong style={{ color: 'var(--accent-cyan)' }}>{processedVideos} videó (100% elérhető)</strong>
+              </div>
+
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginBottom: '0.6rem', fontStyle: 'italic', lineHeight: '1.4' }}>
+                * Mind a 225 nyilvánosan elérhető videó teljesen feldolgozva (1 db videó privát/törölt a YouTube listában).
               </div>
 
               <div style={{
