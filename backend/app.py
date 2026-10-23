@@ -182,7 +182,12 @@ def get_status(x_admin_token: Optional[str] = Header(None)):
         state["matches_found"] = len(verified_checks)
     else:
         state["matches_found"] = len(checks)
-    state["scanned_videos_count"] = len(db.scanned_video_ids)
+    scanned_total = len(db.scanned_video_ids)
+    state["scanned_videos_count"] = scanned_total
+    if state.get("status") == "idle":
+        state["processed_count"] = scanned_total
+        if state.get("total_channel_videos", 0) <= 0:
+            state["total_channel_videos"] = 226
     state["has_gemini_api_key"] = has_gemini_api_key() if is_admin else False
     if is_admin:
         state["open_reports_count"] = sum(1 for r in db.get_reports() if r.get("status") == "open")

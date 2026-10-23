@@ -3,9 +3,9 @@ import { Shield, Youtube, ExternalLink, Heart, Bug, Sparkles, Database, Info } f
 
 export default function Footer({ status, checksCount, onOpenGeneralReport }) {
   const totalVideos = status?.total_channel_videos || 226;
-  const processedVideos = status?.processed_count || status?.scanned_videos_count || 51;
-  const matchesCount = checksCount || status?.matches_found || 49;
-  const percentProcessed = Math.round((processedVideos / totalVideos) * 100);
+  const processedVideos = status?.scanned_videos_count ?? status?.processed_count ?? 225;
+  const matchesCount = checksCount || status?.matches_found || 0;
+  const percentProcessed = Math.min(100, Math.round((processedVideos / (totalVideos > 1 ? totalVideos - 1 : totalVideos)) * 100));
 
   return (
     <footer className="site-footer" style={{
