@@ -665,7 +665,7 @@ def sync_check_game_title(check_id: str, admin: bool = Depends(require_admin)):
 # --- USER REPORTING & ADMIN REPORT MANAGEMENT ---
 
 @app.post("/api/reports")
-def create_report(data: ReportCreateModel, request: Request):
+def create_report(data: ReportCreateModel, request: Request, x_admin_token: Optional[str] = Header(None)):
     # 1. Honeypot check (bot detection)
     if data.hp_token and data.hp_token.strip():
         raise HTTPException(status_code=400, detail="Érvénytelen kérés.")
@@ -726,15 +726,16 @@ def create_report(data: ReportCreateModel, request: Request):
     db.add_report(entry)
     db.add_log(f"📩 Új {'általános ' if is_general else ''}hibabejelentés érkezett: {data.reason}", "warning")
 
-    # Track report event in analytics
-    analytics.track(
-        event_type="report_create",
-        path="/api/reports",
-        referrer=request.headers.get("referer", ""),
-        user_agent=request.headers.get("user-agent", ""),
-        client_ip=client_ip,
-        event_data={"reason": data.reason, "check_id": chk_id}
-    )
+    # Track report event in analytics (exclude admin testing)
+    if not (x_admin_token and verify_admin_token(x_admin_token)):
+        analytics.track(
+            event_type="report_create",
+            path="/api/reports",
+            referrer=request.headers.get("referer", ""),
+            user_agent=request.headers.get("user-agent", ""),
+            client_ip=client_ip,
+            event_data={"reason": data.reason, "check_id": chk_id}
+        )
 
     return {
         "success": True,
@@ -789,7 +790,7 @@ def get_game_random(exclude_id: Optional[str] = None):
     return safe_item
 
 @app.post("/api/game/vote")
-def post_game_vote(data: VoteModel, request: Request):
+def post_game_vote(data: VoteModel, request: Request, x_admin_token: Optional[str] = Header(None)):
     # 1. Honeypot check (bot detection)
     if data.hp_token and data.hp_token.strip():
         raise HTTPException(status_code=400, detail="Érvénytelen kérés.")
@@ -819,23 +820,32 @@ def post_game_vote(data: VoteModel, request: Request):
     if not result:
         raise HTTPException(status_code=404, detail="A megadott budi elem nem található!")
 
-    # Track vote event in analytics
-    game_name = result.get("game_title") or result.get("video_title") or ""
-    analytics.track(
-        event_type="budi_vote",
-        path="/api/game/vote",
-        referrer=request.headers.get("referer", ""),
-        user_agent=request.headers.get("user-agent", ""),
-        client_ip=client_ip,
-        event_data={"check_id": data.check_id, "rating": data.rating, "game_title": game_name}
-    )
+    # Track vote event in analytics (exclude admin testing)
+    if not (x_admin_token and verify_admin_token(x_admin_token)):
+        game_name = result.get("game_title") or result.get("video_title") or ""
+        analytics.track(
+            event_type="budi_vote",
+            path="/api/game/vote",
+            referrer=request.headers.get("referer", ""),
+            user_agent=request.headers.get("user-agent", ""),
+            client_ip=client_ip,
+            event_data={"check_id": data.check_id, "rating": data.rating, "game_title": game_name}
+        )
 
     return result
 
 # --- ANALYTICS & VISITOR TRACKING ENDPOINTS ---
 
 @app.post("/api/analytics/track")
-def track_analytics_event(data: AnalyticsTrackModel, request: Request):
+def track_analytics_event(data: AnalyticsTrackModel, request: Request, x_admin_token: Optional[str] = Header(None)):
+    # 1. Ignore if request is from an authenticated admin
+    if x_admin_token and verify_admin_token(x_admin_token):
+        return {"ok": True, "ignored": "admin"}
+
+    # 2. Ignore admin paths
+    if data.path and (data.path.startswith("/config/admin") or data.path.startswith("/api/admin")):
+        return {"ok": True, "ignored": "admin_path"}
+
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
     referrer = data.referrer or request.headers.get("referer", "")

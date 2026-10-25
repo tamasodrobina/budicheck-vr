@@ -1,7 +1,38 @@
 // Lightweight, privacy-first analytics tracker for BudiCheck
-// No cookies, GDPR-compliant, fire-and-forget
+// No cookies, GDPR-compliant, fire-and-forget, with full admin self-exclusion
 
 const VISITOR_ID_KEY = 'budicheck_vid';
+export const IGNORE_ANALYTICS_KEY = 'budicheck_ignore_analytics';
+
+export function isTrackingIgnored() {
+  try {
+    // 1. Explicit admin ignore flag in localStorage
+    if (localStorage.getItem(IGNORE_ANALYTICS_KEY) === 'true') {
+      return true;
+    }
+    // 2. Active admin token in localStorage
+    if (localStorage.getItem('budicheck_admin_token')) {
+      return true;
+    }
+    // 3. Admin path
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/config/admin')) {
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setTrackingIgnored(ignored) {
+  try {
+    if (ignored) {
+      localStorage.setItem(IGNORE_ANALYTICS_KEY, 'true');
+    } else {
+      localStorage.removeItem(IGNORE_ANALYTICS_KEY);
+    }
+  } catch (e) {}
+}
 
 export function getVisitorId() {
   try {
@@ -20,6 +51,14 @@ let lastTrackedPath = null;
 let lastTrackedTime = 0;
 
 export function trackPageView(path = window.location.pathname) {
+  // Never track admin visits or admin pages
+  if (isTrackingIgnored()) {
+    return;
+  }
+  if (path && path.startsWith('/config/admin')) {
+    return;
+  }
+
   const now = Date.now();
   // Debounce consecutive calls to the same path within 3 seconds
   if (lastTrackedPath === path && (now - lastTrackedTime) < 3000) {
@@ -32,7 +71,21 @@ export function trackPageView(path = window.location.pathname) {
 }
 
 export function trackEvent(eventType, eventData = null, path = window.location.pathname) {
+  // Never track if visitor is admin
+  if (isTrackingIgnored()) {
+    return;
+  }
+  if (path && path.startsWith('/config/admin')) {
+    return;
+  }
+
   try {
+    const adminToken = localStorage.getItem('budicheck_admin_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (adminToken) {
+      headers['x-admin-token'] = adminToken;
+    }
+
     const payload = {
       event_type: eventType,
       path: path || '/',
@@ -43,7 +96,7 @@ export function trackEvent(eventType, eventData = null, path = window.location.p
 
     const url = '/api/analytics/track';
 
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon && !adminToken) {
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
       const sent = navigator.sendBeacon(url, blob);
       if (sent) return;
@@ -51,7 +104,7 @@ export function trackEvent(eventType, eventData = null, path = window.location.p
 
     fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
       keepalive: true
     }).catch(() => {

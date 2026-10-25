@@ -142,6 +142,7 @@ export default function AdminPanel({
       if (res.ok) {
         const data = await res.json();
         localStorage.setItem('budicheck_admin_token', data.token);
+        localStorage.setItem('budicheck_ignore_analytics', 'true');
         setToken(data.token);
         setIsAuthenticated(true);
         setLoginPassword('');

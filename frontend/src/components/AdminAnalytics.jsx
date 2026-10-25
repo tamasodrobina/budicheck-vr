@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, TrendingUp, TrendingDown, Users, Eye, Zap, 
   Monitor, Smartphone, Tablet, RefreshCw, Trash2, Shield, 
-  Globe, Calendar, Clock, AlertCircle, Gamepad2, Video, Search, MessageSquare
+  Globe, Calendar, Clock, AlertCircle, Gamepad2, Video, Search, MessageSquare,
+  ShieldCheck, ShieldOff
 } from 'lucide-react';
+import { isTrackingIgnored, setTrackingIgnored } from '../utils/analytics';
 
 export default function AdminAnalytics({ token, onPlayItem }) {
   const [data, setData] = useState(null);
@@ -12,6 +14,15 @@ export default function AdminAnalytics({ token, onPlayItem }) {
   const [hoveredDay, setHoveredDay] = useState(null);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState(null);
+  const [ignoreAdminTracking, setIgnoreAdminTracking] = useState(() => isTrackingIgnored());
+
+  // Automatically ensure this admin's browser is excluded
+  useEffect(() => {
+    if (!isTrackingIgnored()) {
+      setTrackingIgnored(true);
+      setIgnoreAdminTracking(true);
+    }
+  }, []);
 
   const fetchAnalytics = async (selectedDays = days) => {
     if (!token) return;
@@ -146,6 +157,33 @@ export default function AdminAnalytics({ token, onPlayItem }) {
                 <Shield size={12} />
                 GDPR Cookieless
               </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !ignoreAdminTracking;
+                  setIgnoreAdminTracking(next);
+                  setTrackingIgnored(next);
+                }}
+                style={{
+                  background: ignoreAdminTracking ? 'rgba(6, 214, 160, 0.18)' : 'rgba(255, 77, 109, 0.18)',
+                  color: ignoreAdminTracking ? 'var(--accent-green)' : 'var(--accent-red)',
+                  border: `1px solid ${ignoreAdminTracking ? 'rgba(6, 214, 160, 0.45)' : 'rgba(255, 77, 109, 0.45)'}`,
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '3px 9px',
+                  borderRadius: '12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title="Kattints a váltáshoz: garantálja, hogy a te teszteléseid és látogatásaid erről az eszközről sosem kerülnek a statisztikába"
+              >
+                {ignoreAdminTracking ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
+                <span>{ignoreAdminTracking ? '🛡️ Saját böngésződ kizárva' : '⚠️ Saját mérés aktív!'}</span>
+              </button>
             </div>
             <p style={{ margin: '4px 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               Teljesen beépített, privát analitika: nincs külső hirdetéskövető, nem tárol személyes IP-címet.
