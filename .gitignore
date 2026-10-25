@@ -43,6 +43,8 @@ data/admin_tokens.json
 *cookie*.txt
 *.cookies
 cookies.txt
+output/
+data/analytics.backup.json
 
 # IDE & OS files
 .DS_Store

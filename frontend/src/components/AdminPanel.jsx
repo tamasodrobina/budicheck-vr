@@ -4,8 +4,10 @@ import {
   Search, Sparkles, Key, CheckCircle, AlertTriangle, ExternalLink, 
   Settings, ChevronDown, ChevronUp, Copy, Check, ArrowDown, 
   Lock, Unlock, Shield, LogOut, ArrowLeft, RefreshCw, Zap,
-  Database, UserCheck, Bug, CheckSquare, Edit3, X, Filter, Eye, Target, Camera
+  Database, UserCheck, Bug, CheckSquare, Edit3, X, Filter, Eye, Target, Camera,
+  BarChart3
 } from 'lucide-react';
+import AdminAnalytics from './AdminAnalytics';
 
 export default function AdminPanel({ 
   status, 
@@ -19,7 +21,7 @@ export default function AdminPanel({
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
 
-  // Active top tab: 'checks' (Visszaellenőrzés), 'reports' (Hibabejelentések), 'system' (Kereső & Beállítások)
+  // Active top tab: 'checks' (Visszaellenőrzés), 'analytics' (Látogatottság), 'reports' (Hibabejelentések), 'system' (Kereső & Beállítások)
   const [activeTab, setActiveTab] = useState('checks');
 
   // Login form
@@ -899,6 +901,15 @@ export default function AdminPanel({
         </button>
 
         <button
+          className={`btn ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('analytics')}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.1rem', fontWeight: 700 }}
+        >
+          <BarChart3 size={16} />
+          <span>📊 Látogatottság & Statisztika</span>
+        </button>
+
+        <button
           className={`btn ${activeTab === 'reports' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => { setActiveTab('reports'); fetchReports(); }}
           style={{
@@ -1520,6 +1531,16 @@ export default function AdminPanel({
             </div>
           )}
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: LÁTOGATOTTSÁG & STATISZTIKA */}
+      {/* ========================================================================= */}
+      {activeTab === 'analytics' && (
+        <AdminAnalytics
+          token={token}
+          onPlayItem={onPlayItem}
+        />
       )}
 
       {/* ========================================================================= */}

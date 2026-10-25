@@ -12,6 +12,7 @@ import BudiGame from './components/BudiGame';
 import TopographicBackground from './components/TopographicBackground';
 import Footer from './components/Footer';
 import { Sparkles, RefreshCw, Trophy, Shield } from 'lucide-react';
+import { trackPageView, trackEvent } from './utils/analytics';
 
 export default function App() {
   const [isAdminRoute, setIsAdminRoute] = useState(() => {
@@ -47,12 +48,23 @@ export default function App() {
 
   const handleOpenQuiz = () => {
     setIsQuizOpen(true);
+    trackEvent('quiz_start');
     setTimeout(() => {
       const el = document.getElementById('budi-quiz-section');
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 60);
+  };
+
+  const handlePlayItem = (item) => {
+    setPlayingItem(item);
+    if (item) {
+      trackEvent('video_play', {
+        check_id: item.id,
+        game_title: item.game_title || item.video_title || ''
+      });
+    }
   };
 
   // Admin session reactive state
@@ -109,13 +121,30 @@ export default function App() {
     };
   }, [isAdminRoute]);
 
+  // Track initial page view on mount
+  useEffect(() => {
+    trackPageView(window.location.pathname);
+  }, []);
+
+  // Track search queries (debounced)
+  useEffect(() => {
+    if (search && search.trim().length >= 3) {
+      const timer = setTimeout(() => {
+        trackEvent('search', { query: search.trim() });
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [search]);
+
   const navigateToAdmin = (showAdmin) => {
     if (showAdmin) {
       window.history.pushState({}, '', '/config/admin');
       setIsAdminRoute(true);
+      trackPageView('/config/admin');
     } else {
       window.history.pushState({}, '', '/');
       setIsAdminRoute(false);
+      trackPageView('/');
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -299,13 +328,13 @@ export default function App() {
           onRefreshChecks={fetchChecks}
           onBackToPublic={() => navigateToAdmin(false)}
           onEditCheck={setEditingItem}
-          onPlayItem={setPlayingItem}
+          onPlayItem={handlePlayItem}
         />
       ) : (
         <main className="container" style={{ marginTop: '1.5rem', marginBottom: '4rem' }}>
           {/* COMMUNITY QUIZ & MINIGAME BANNER */}
           <BudiGame 
-            onPlayItem={setPlayingItem} 
+            onPlayItem={handlePlayItem} 
             isOpen={isQuizOpen}
             onToggleOpen={(val) => setIsQuizOpen(val !== undefined ? val : !isQuizOpen)}
           />
@@ -335,7 +364,7 @@ export default function App() {
             (viewMode === 'tierlist' || viewMode === 'community_tierlist') ? (
               <TierListView
                 checks={items}
-                onSelectCheck={setPlayingItem}
+                onSelectCheck={handlePlayItem}
                 isCommunityMode={viewMode === 'community_tierlist'}
                 onReport={setReportingItem}
                 onOpenQuiz={handleOpenQuiz}
@@ -346,7 +375,7 @@ export default function App() {
                   <BudiCard
                     key={item.id}
                     item={item}
-                    onPlay={setPlayingItem}
+                    onPlay={handlePlayItem}
                     onEdit={hasAdminSession ? setEditingItem : null}
                     onDelete={hasAdminSession ? handleDelete : null}
                     onReport={setReportingItem}
@@ -356,7 +385,7 @@ export default function App() {
             ) : (
               <BudiTable
                 items={items}
-                onPlay={setPlayingItem}
+                onPlay={handlePlayItem}
                 onEdit={hasAdminSession ? setEditingItem : null}
                 onDelete={hasAdminSession ? handleDelete : null}
                 onReport={setReportingItem}
@@ -365,7 +394,7 @@ export default function App() {
           ) : viewMode === 'table' ? (
             <BudiTable
               items={[]}
-              onPlay={setPlayingItem}
+              onPlay={handlePlayItem}
               onEdit={hasAdminSession ? setEditingItem : null}
               onDelete={hasAdminSession ? handleDelete : null}
               onReport={setReportingItem}

@@ -22,6 +22,7 @@ from .config import (
 from .gemini_analyzer import check_models_quota, audit_budi_check_with_ai
 from .game_detector import detect_game_title_from_video
 from .security import get_client_ip, get_voter_hash, vote_limiter, report_limiter, login_limiter
+from .analytics import analytics
 
 app = FastAPI(title="TheVR Jani BudiCheck API", version="1.0.0")
 
@@ -86,6 +87,13 @@ class VoteModel(BaseModel):
     rating: float
     hp_token: Optional[str] = None
     client_ts: Optional[float] = None
+
+class AnalyticsTrackModel(BaseModel):
+    event_type: str = "pageview"
+    path: Optional[str] = "/"
+    referrer: Optional[str] = ""
+    visitor_id: Optional[str] = None
+    event_data: Optional[dict] = None
 
 # --- ADMIN AUTH ENDPOINTS ---
 
@@ -717,6 +725,17 @@ def create_report(data: ReportCreateModel, request: Request):
     }
     db.add_report(entry)
     db.add_log(f"📩 Új {'általános ' if is_general else ''}hibabejelentés érkezett: {data.reason}", "warning")
+
+    # Track report event in analytics
+    analytics.track(
+        event_type="report_create",
+        path="/api/reports",
+        referrer=request.headers.get("referer", ""),
+        user_agent=request.headers.get("user-agent", ""),
+        client_ip=client_ip,
+        event_data={"reason": data.reason, "check_id": chk_id}
+    )
+
     return {
         "success": True,
         "message": "Köszönjük a bejelentést! Az észrevételed eljutott az oldal karbantartójához.",
@@ -800,7 +819,45 @@ def post_game_vote(data: VoteModel, request: Request):
     if not result:
         raise HTTPException(status_code=404, detail="A megadott budi elem nem található!")
 
+    # Track vote event in analytics
+    game_name = result.get("game_title") or result.get("video_title") or ""
+    analytics.track(
+        event_type="budi_vote",
+        path="/api/game/vote",
+        referrer=request.headers.get("referer", ""),
+        user_agent=request.headers.get("user-agent", ""),
+        client_ip=client_ip,
+        event_data={"check_id": data.check_id, "rating": data.rating, "game_title": game_name}
+    )
+
     return result
+
+# --- ANALYTICS & VISITOR TRACKING ENDPOINTS ---
+
+@app.post("/api/analytics/track")
+def track_analytics_event(data: AnalyticsTrackModel, request: Request):
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+    referrer = data.referrer or request.headers.get("referer", "")
+    analytics.track(
+        event_type=data.event_type,
+        path=data.path,
+        referrer=referrer,
+        user_agent=user_agent,
+        client_ip=client_ip,
+        visitor_id=data.visitor_id,
+        event_data=data.event_data
+    )
+    return {"ok": True}
+
+@app.get("/api/admin/analytics")
+def get_admin_analytics(days: int = Query(30, ge=1, le=90), is_admin: bool = Depends(require_admin)):
+    return analytics.get_summary(days=days)
+
+@app.post("/api/admin/analytics/reset")
+def reset_admin_analytics(is_admin: bool = Depends(require_admin)):
+    analytics.reset()
+    return {"success": True, "message": "Látogatottsági statisztikák sikeresen alaphelyzetbe állítva."}
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 @app.api_route("/health", methods=["GET", "HEAD"])
