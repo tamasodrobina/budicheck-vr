@@ -72,24 +72,24 @@ VIDEOS = {
     "video_03_perfect_ten": {
         "title": "Létezik tökéletes, 10/10-es budi?",
         "audio_path": "scratch/fenrir_campaign_master/video_03_perfect_ten_master.wav",
-        "total_duration": 27.93,
+        "total_duration": 30.64,
         "slides": [
-            ("scratch/campaign_slides/v3_seg1_intro.jpg", 6.10),
-            ("scratch/campaign_slides/v3_seg2_nightcleaner.jpg", 7.10),
-            ("scratch/campaign_slides/v3_seg3_reanimal.jpg", 8.00),
-            ("scratch/campaign_slides/v3_seg4_outro.jpg", 6.73)
+            ("scratch/campaign_slides/v3_seg1_intro.jpg", 6.76),
+            ("scratch/campaign_slides/v3_seg2_nightcleaner.jpg", 7.84),
+            ("scratch/campaign_slides/v3_seg3_karma.jpg", 8.20),
+            ("scratch/campaign_slides/v3_seg4_outro.jpg", 7.84)
         ],
         "captions": [
-            (0.00, 6.10, "Létezik olyan budi horrorjátékban, amire\\nJani megadta a maximális 10-ből 10 pontot?"),
-            (6.10, 13.20, "A Night Cleaner majdnem vitte a prímet 9.5-tel,\\nde a lefolyó miatt levont egy felet!"),
-            (13.20, 21.20, "De igen, van tökéletes: a Reanimal budija\\nmegkapta a 10/10-et, mert le is lehetett húzni!"),
-            (21.20, 27.93, "Keresd meg az összes budit az oldalon:\\nbudicheck-vr.onrender.com")
+            (0.00, 6.76, "Létezik olyan budi horrorjátékban, amire\\nJani megadta a maximális 10-ből 10 pontot?"),
+            (6.76, 14.60, "A Night Cleaner majdnem vitte a prímet 9.5-tel,\\nde a lefolyó miatt levont egy felet!"),
+            (14.60, 22.80, "De igen, van tökéletes: a Karma The Dark World budijára\\nJani azonnal rávágta a 10/10-et!"),
+            (22.80, 30.64, "Keresd meg az összes budit az oldalon:\\nbudicheck-vr.onrender.com")
         ],
         "sfx": [
             ("scratch/sfx/whoosh.wav", 0.05, 0.8),
-            ("scratch/sfx/vine_boom.wav", 6.15, 0.85),
-            ("scratch/sfx/fanfare.wav", 13.25, 0.95),
-            ("scratch/sfx/chime.wav", 21.25, 0.8)
+            ("scratch/sfx/vine_boom.wav", 6.85, 0.85),
+            ("scratch/sfx/fanfare.wav", 14.70, 0.95),
+            ("scratch/sfx/chime.wav", 22.90, 0.8)
         ]
     }
 }
@@ -231,10 +231,10 @@ A videók a legújabb Gemini **Fenrir** hanggal (ugyanazzal, mint a `budicheck_t
 * **Fájl:** `output/tiktok_campaign/video_03_perfect_ten.mp4`
 * **Hang:** Gemini Fenrir
 * **Időtartam:** {rendered['video_03_perfect_ten']['dur']:.1f} mp | **Méret:** {rendered['video_03_perfect_ten']['size']:.2f} MB
-* **Tartalom:** The Night Cleaner (9.5 pont), Reanimal valódi lehúzható vécé jelenet (10.0 pont).
+* **Tartalom:** The Night Cleaner (9.5 pont), Karma: The Dark World 10/10-es győztes jelenet (10.0 pont).
 * **Poszt Leírás (TikTok / Shorts):**
   > Létezik 10/10-es budi horrorjátékban? Jani szerint igen! 👑🚽 Nézd meg az összes S-tier és győztes értékelést az oldalon: 👉 budicheck-vr.onrender.com
-* **Hashtagek:** `#thevr #thevrjani #budicheck #thevrhungary #reanimal #gaminghungary #tierlist #nekedbe #fyp`
+* **Hashtagek:** `#thevr #thevrjani #budicheck #thevrhungary #karmathedarkworld #gaminghungary #tierlist #nekedbe #fyp`
 
 ---
 

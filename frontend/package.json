@@ -18,6 +18,9 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.1",
     "puppeteer-core": "^25.14.0",
-    "vite": "^5.1.4"
+    "vite": "^6.4.5"
+  },
+  "overrides": {
+    "esbuild": "^0.25.0"
   }
 }

@@ -10,10 +10,14 @@ def get_client_ip(request: Request) -> str:
     """Extracts client IP address supporting reverse proxies (X-Forwarded-For)."""
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        client_ip = forwarded.split(",")[0].strip()
+        if client_ip and len(client_ip) <= 64:
+            return client_ip
     real_ip = request.headers.get("x-real-ip")
     if real_ip:
-        return real_ip.strip()
+        client_ip = real_ip.strip()
+        if client_ip and len(client_ip) <= 64:
+            return client_ip
     return request.client.host if request.client else "127.0.0.1"
 
 def get_voter_hash(client_ip: str) -> str:
@@ -27,10 +31,17 @@ class InMemoryRateLimiter:
     """
     Thread-safe sliding-window rate limiter for public endpoints.
     Tracks timestamps of requests per client key (IP).
+    Automatically purges expired records to prevent memory leaks in production.
     """
     def __init__(self):
         self.lock = threading.Lock()
         self.requests: Dict[str, List[float]] = {}
+        self._call_counter = 0
+
+    def _purge_expired(self, now: float, window_seconds: int):
+        expired_keys = [k for k, v in self.requests.items() if not v or (now - v[-1] >= window_seconds)]
+        for k in expired_keys:
+            self.requests.pop(k, None)
 
     def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> Tuple[bool, int]:
         """
@@ -39,7 +50,12 @@ class InMemoryRateLimiter:
         """
         now = time.time()
         with self.lock:
-            # Clean old entries
+            self._call_counter += 1
+            if self._call_counter > 100 or len(self.requests) > 500:
+                self._purge_expired(now, window_seconds)
+                self._call_counter = 0
+
+            # Clean old entries for this key
             timestamps = [t for t in self.requests.get(key, []) if now - t < window_seconds]
             if len(timestamps) >= max_requests:
                 earliest = timestamps[0]

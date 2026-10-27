@@ -49,11 +49,18 @@ class Database:
 
     def save_reports(self):
         with self.lock:
+            temp_file = REPORTS_FILE + ".tmp"
             try:
-                with open(REPORTS_FILE, "w", encoding="utf-8") as f:
+                with open(temp_file, "w", encoding="utf-8") as f:
                     json.dump(self.reports, f, ensure_ascii=False, indent=2)
+                os.replace(temp_file, REPORTS_FILE)
             except Exception as e:
                 print(f"Error saving reports file: {e}")
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
 
     def load(self):
         with self.lock:
@@ -72,8 +79,18 @@ class Database:
                 "scanned_video_ids": list(self.scanned_video_ids),
                 "budi_checks": self.budi_checks
             }
-            with open(DB_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            temp_file = DB_FILE + ".tmp"
+            try:
+                with open(temp_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(temp_file, DB_FILE)
+            except Exception as e:
+                print(f"Error saving database file: {e}")
+                if os.path.exists(temp_file):
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
 
     def reset(self):
         """Completely reset database state, logs, and screenshots."""

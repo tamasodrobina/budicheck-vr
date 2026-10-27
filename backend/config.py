@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import hashlib
 import secrets
 from pathlib import Path
@@ -29,39 +30,64 @@ DEFAULT_CONFIG = {
 }
 
 TOKENS_PATH = BASE_DIR / "data" / "admin_tokens.json"
+TOKEN_TTL_SECONDS = 7 * 86400  # 7 days expiration
 
-def _load_tokens() -> set:
+def _load_tokens() -> dict:
+    """Loads tokens as a dict of {token: timestamp}. Cleans expired tokens."""
+    now = time.time()
+    tokens = {}
     if TOKENS_PATH.exists():
         try:
             with open(TOKENS_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return set(data) if isinstance(data, list) else set()
+                if isinstance(data, list):
+                    # Migration from legacy list format
+                    tokens = {t: now for t in data if isinstance(t, str)}
+                elif isinstance(data, dict):
+                    tokens = {t: ts for t, ts in data.items() if (now - ts) < TOKEN_TTL_SECONDS}
         except Exception:
             pass
-    return set()
+    return tokens
 
 def _save_tokens():
     try:
         TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(TOKENS_PATH, "w", encoding="utf-8") as f:
-            json.dump(list(_active_admin_tokens), f)
+        temp_path = TOKENS_PATH.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(_active_admin_tokens, f)
+        os.replace(temp_path, TOKENS_PATH)
     except Exception:
         pass
 
-_active_admin_tokens = _load_tokens()
+_active_admin_tokens: dict = _load_tokens()
 
 def verify_admin_password(password: str) -> bool:
+    """
+    Verifies admin password using constant-time comparison.
+    In cloud/production environments, rejects the default 'admin123' password.
+    """
+    if not password:
+        return False
+
+    input_hash = hash_password(password)
+
     # 1. Environment variable support (highest priority, persistent on cloud like Render)
     env_pass = os.environ.get("ADMIN_PASSWORD") or os.environ.get("BUDICHECK_ADMIN_PASSWORD")
     if env_pass and env_pass.strip():
         clean_env = env_pass.strip()
-        if password == clean_env or hash_password(password) == hash_password(clean_env):
-            return True
+        expected_hash = hash_password(clean_env)
+        return secrets.compare_digest(input_hash, expected_hash)
 
     # 2. Config file fallback
+    is_cloud = "RENDER" in os.environ or "PORT" in os.environ or os.environ.get("ENVIRONMENT") == "production"
     cfg = load_config()
     saved_hash = cfg.get("admin_password_hash", DEFAULT_PASSWORD_HASH)
-    return hash_password(password) == saved_hash
+
+    # In cloud / production, do not allow default 'admin123' password
+    if is_cloud and secrets.compare_digest(saved_hash, DEFAULT_PASSWORD_HASH):
+        return False
+
+    return secrets.compare_digest(input_hash, saved_hash)
 
 def change_admin_password(new_password: str) -> bool:
     new_hash = hash_password(new_password)
@@ -70,7 +96,7 @@ def change_admin_password(new_password: str) -> bool:
 
 def create_admin_token() -> str:
     token = secrets.token_hex(24)
-    _active_admin_tokens.add(token)
+    _active_admin_tokens[token] = time.time()
     _save_tokens()
     return token
 
@@ -78,18 +104,28 @@ def verify_admin_token(token: str) -> bool:
     global _active_admin_tokens
     if not token:
         return False
-    if token in _active_admin_tokens:
+    now = time.time()
+    # Check in-memory
+    ts = _active_admin_tokens.get(token)
+    if ts and (now - ts) < TOKEN_TTL_SECONDS:
         return True
+    elif ts:
+        _active_admin_tokens.pop(token, None)
+        _save_tokens()
+        return False
+
+    # Check disk
     disk_tokens = _load_tokens()
-    if token in disk_tokens:
-        _active_admin_tokens.update(disk_tokens)
+    ts = disk_tokens.get(token)
+    if ts and (now - ts) < TOKEN_TTL_SECONDS:
+        _active_admin_tokens[token] = ts
         return True
     return False
 
 def revoke_admin_token(token: str):
     global _active_admin_tokens
     if token in _active_admin_tokens:
-        _active_admin_tokens.remove(token)
+        _active_admin_tokens.pop(token, None)
         _save_tokens()
 
 def load_config() -> dict:

@@ -1,6 +1,8 @@
 import os
 import time
+import logging
 import threading
+from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends, Request
@@ -8,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger("budicheck")
 
 from .database import db, SCREENSHOTS_DIR
 from .scanner import (
@@ -26,13 +30,58 @@ from .analytics import analytics
 
 app = FastAPI(title="TheVR Jani BudiCheck API", version="1.0.0")
 
+# Security-hardened CORS configuration
+raw_origins = os.environ.get("ALLOWED_ORIGINS", "").strip()
+if raw_origins and raw_origins != "*":
+    allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+    allow_credentials = True
+elif raw_origins == "*":
+    allowed_origins = ["*"]
+    allow_credentials = False
+else:
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ]
+    allow_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
+
+# HTTP Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+    # Content Security Policy (allows app resources, Google Fonts, YouTube iframes & thumbnails)
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https://i.ytimg.com https://img.youtube.com; "
+        "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
+        "connect-src 'self'"
+    )
+    response.headers["Content-Security-Policy"] = csp
+
+    # Enforce HSTS on cloud / HTTPS environments
+    if "RENDER" in os.environ or "PORT" in os.environ or os.environ.get("ENVIRONMENT") == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    return response
 
 app.mount("/screenshots", StaticFiles(directory=SCREENSHOTS_DIR), name="screenshots")
 
@@ -880,10 +929,15 @@ if os.path.exists(FRONTEND_DIST):
 
     @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     def serve_frontend(full_path: str):
-        file_path = os.path.join(FRONTEND_DIST, full_path)
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        # Path traversal protection: ensure requested file is strictly inside FRONTEND_DIST
+        dist_path = Path(FRONTEND_DIST).resolve()
+        requested = (dist_path / full_path).resolve()
+        try:
+            if requested.is_relative_to(dist_path) and requested.is_file():
+                return FileResponse(str(requested))
+        except Exception:
+            pass
+        return FileResponse(str(dist_path / "index.html"))
 else:
     @app.api_route("/", methods=["GET", "HEAD"])
     def root():
